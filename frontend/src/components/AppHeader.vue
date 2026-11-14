@@ -21,7 +21,7 @@ function submitSearch() {
 <template>
   <div class="prototype-strip">
     <div class="prototype-strip-inner">
-      <RouterLink to="/" class="step-pill" exact-active-class="active">1. Beranda</RouterLink>
+      <RouterLink to="/" class="step-pill " exact-active-class="active">1. Beranda</RouterLink>
       <RouterLink to="/products/1" class="step-pill" :class="{ active: isProductRoute }">2. Detail Produk</RouterLink>
       <RouterLink to="/checkout" class="step-pill" active-class="active">3. Checkout &amp; COD</RouterLink>
       <RouterLink to="/orders/track" class="step-pill" active-class="active">4. Cek Status</RouterLink>

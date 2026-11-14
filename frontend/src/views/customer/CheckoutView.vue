@@ -31,7 +31,10 @@ function submitPreview() {
       <aside class="surface-card order-summary">
         <h2>Ringkasan Pesanan</h2>
         <p>{{ cart.totalItems }} item dalam keranjang</p>
-        <div v-for="item in cart.items" :key="item.id" class="summary-line"><span>{{ item.name }} × {{ item.quantity }}</span><strong>{{ formatRupiah(item.price * item.quantity) }}</strong></div>
+        <div v-for="item in cart.items" :key="item.cartKey || item.id" class="summary-line">
+          <span>{{ item.name }}{{ item.variantName ? ` (${item.variantName})` : '' }} × {{ item.quantity }}</span>
+          <strong>{{ formatRupiah(item.price * item.quantity) }}</strong>
+        </div>
         <div class="summary-total"><span>Total sementara</span><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
       </aside>
     </div>
