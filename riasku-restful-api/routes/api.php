@@ -14,3 +14,8 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
     Route::get('/me', [CustomerAuthController::class, 'me']);
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
+
+Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
+    Route::get('/orders', fn () => response()->json(['message' => 'Pesanan saya', 'data' => []]));
+    Route::post('/checkout', fn () => response()->json(['message' => 'Checkout berhasil', 'data' => []]));
+});

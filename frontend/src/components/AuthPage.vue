@@ -4,9 +4,11 @@ import heroImage from '@/assets/auth/hero.webp'
 import brandIcon from '@/assets/auth/brand-icon.png'
 
 defineProps({
-  active: { type: String, required: true },
+  active: { type: String, default: 'login' },
   title: { type: String, required: true },
   subtitle: { type: String, required: true },
+  showTabs: { type: Boolean, default: true },
+  badge: { type: String, default: '' },
 })
 
 const route = useRoute()
@@ -37,13 +39,16 @@ function tabLocation(name) {
 
       <div class="panel-main">
         <div class="card">
-          <nav class="tabs" role="tablist" aria-label="Masuk atau daftar" :data-active="active">
+          <nav v-if="showTabs" class="tabs" role="tablist" aria-label="Masuk atau daftar" :data-active="active">
             <span class="tab-ind" aria-hidden="true"></span>
             <RouterLink class="tab" :to="tabLocation('login')" role="tab" :aria-selected="active === 'login'" :tabindex="active === 'login' ? 0 : -1">Masuk</RouterLink>
             <RouterLink class="tab" :to="tabLocation('register')" role="tab" :aria-selected="active === 'register'" :tabindex="active === 'register' ? 0 : -1">Daftar</RouterLink>
           </nav>
 
           <section class="pane active" role="tabpanel">
+            <div v-if="badge" class="badge-wrapper">
+              <span class="admin-badge-tag">{{ badge }}</span>
+            </div>
             <h1>{{ title }}</h1>
             <p class="sub">{{ subtitle }}</p>
             <slot />
@@ -53,3 +58,21 @@ function tabLocation(name) {
     </main>
   </div>
 </template>
+
+<style scoped>
+.badge-wrapper {
+  margin-bottom: 12px;
+}
+.admin-badge-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background-color: var(--apricot, #F6D6A8);
+  color: var(--espresso, #4A2C35);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+</style>

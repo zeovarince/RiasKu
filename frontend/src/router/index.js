@@ -37,6 +37,7 @@ const routes = [
       { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
       { path: 'products', name: 'admin-products', component: () => import('@/views/admin/ProductsView.vue') },
       { path: 'products/create', name: 'admin-product-create', component: () => import('@/views/admin/ProductCreateView.vue') },
+      { path: 'products/:id/edit', name: 'admin-product-edit', component: () => import('@/views/admin/ProductCreateView.vue') },
       { path: 'categories', name: 'admin-categories', component: () => import('@/views/admin/CategoriesView.vue') },
       { path: 'reviews', name: 'admin-reviews', component: () => import('@/views/admin/ReviewsView.vue') },
       { path: 'orders', name: 'admin-orders', component: () => import('@/views/admin/OrdersView.vue') },

@@ -107,25 +107,59 @@
 
   /* Tab Masuk / Daftar */
   .auth-redesign .tabs {
-    position: relative; display: grid; grid-template-columns: 1fr 1fr;
-    padding: 4px; margin: 0 0 28px;
-    background: rgba(250,218,221,.55); border-radius: 14px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 4px;
+    margin: 0 0 28px;
+    background: rgba(250, 218, 221, 0.55);
+    border-radius: 14px;
+    align-items: center;
   }
   .auth-redesign .tab {
-    position: relative; z-index: 1; height: 42px; border: 0; border-radius: 10px;
-    background: transparent; font-size: 14px; font-weight: 500; color: var(--muted);
-    transition: color .2s;
+    position: relative;
+    z-index: 1;
+    height: 42px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    text-decoration: none !important;
+    transition: color 0.2s;
+    user-select: none;
   }
-  .auth-redesign .tab:hover { color: var(--espresso); }
-  .auth-redesign .tab[aria-selected="true"] { color: var(--espresso); font-weight: 600; }
-  .auth-redesign .tab:focus-visible { outline-offset: -2px; }
+  .auth-redesign .tab:hover {
+    color: var(--espresso);
+    text-decoration: none !important;
+  }
+  .auth-redesign .tab[aria-selected="true"] {
+    color: var(--espresso);
+    font-weight: 600;
+  }
+  .auth-redesign .tab:focus-visible {
+    outline-offset: -2px;
+  }
   .auth-redesign .tab-ind {
-    position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
-    background: #fff; border-radius: 10px;
-    box-shadow: 0 4px 10px -4px rgba(156,74,99,.35);
-    transition: transform .35s cubic-bezier(.3,.8,.3,1);
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px -4px rgba(156, 74, 99, 0.35);
+    transition: transform 0.35s cubic-bezier(0.3, 0.8, 0.3, 1);
+    pointer-events: none;
   }
-  .auth-redesign .tabs[data-active="register"] .tab-ind { transform: translateX(100%); }
+  .auth-redesign .tabs[data-active="register"] .tab-ind {
+    transform: translateX(100%);
+  }
 
   /* Dua panel ditumpuk di satu sel grid: tinggi kartu tetap, tab tidak melompat */
   .auth-redesign .panes { display: grid; }

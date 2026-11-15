@@ -203,4 +203,35 @@ it('rejects an admin token from customer protected routes', function (): void {
     $token = $admin->createToken('admin-test')->plainTextToken;
 
     $this->withToken($token)->getJson('/api/auth/me')->assertForbidden();
+    $this->withToken($token)->getJson('/api/orders')->assertForbidden();
+    $this->withToken($token)->postJson('/api/checkout')->assertForbidden();
+});
+
+it('requires authentication for customer functions and only permits customer tokens', function (): void {
+    // 401 bila tanpa token
+    $this->getJson('/api/orders')->assertUnauthorized();
+    $this->postJson('/api/checkout')->assertUnauthorized();
+
+    // 403 bila peran salah (token admin)
+    $admin = Admin::create([
+        'name' => 'Admin RiasKu',
+        'email' => 'admin_role@example.test',
+        'password_hash' => 'strong-password',
+        'is_active' => true,
+    ]);
+    $adminToken = $admin->createToken('admin-token')->plainTextToken;
+    $this->withToken($adminToken)->getJson('/api/orders')->assertForbidden()->assertJsonPath('message', 'Akses hanya untuk pelanggan.');
+    $this->withToken($adminToken)->postJson('/api/checkout')->assertForbidden()->assertJsonPath('message', 'Akses hanya untuk pelanggan.');
+
+    // 200 bila token pelanggan valid
+    $this->app['auth']->forgetGuards();
+    $pelanggan = Pelanggan::create([
+        'username' => 'customer_valid',
+        'email' => 'valid@example.test',
+        'password_hash' => 'strong-password',
+        'is_active' => true,
+    ]);
+    $customerToken = $pelanggan->createToken('customer-token')->plainTextToken;
+    $this->withToken($customerToken)->getJson('/api/orders')->assertOk();
+    $this->withToken($customerToken)->postJson('/api/checkout')->assertOk();
 });
