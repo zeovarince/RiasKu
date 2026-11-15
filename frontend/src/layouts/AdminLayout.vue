@@ -2,8 +2,11 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
+import { useAuthStore } from '@/stores/auth'
+import { logoutAdmin } from '@/services/adminAuthService'
 
 const route = useRoute()
+const auth = useAuthStore()
 const items = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: 'dashboard' },
   { label: 'Produk', to: '/admin/products', icon: 'products' },
@@ -19,6 +22,17 @@ const section = computed(() => {
   const current = items.find((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
   return current?.label || 'Dashboard'
 })
+
+async function signOut() {
+  try {
+    await logoutAdmin()
+  } catch {
+    // Clear the local session even when the API is unreachable.
+  } finally {
+    auth.clearSession()
+    window.location.assign('/admin/login')
+  }
+}
 </script>
 
 <template>
@@ -48,15 +62,15 @@ const section = computed(() => {
         <AdminIcon name="store" :size="19" />
         <span class="admin-sidebar-tooltip">Lihat toko</span>
       </RouterLink>
-      <div class="admin-profile" title="Admin RiasKu">AD</div>
+      <button class="admin-profile admin-profile-button" type="button" title="Keluar" @click="signOut">{{ (auth.user?.name || 'Admin').slice(0, 2).toUpperCase() }}</button>
     </aside>
 
     <div class="admin-main-column">
       <header class="admin-topbar">
         <div class="admin-breadcrumb"><span>Admin</span><b>/</b><strong>{{ section }}</strong></div>
         <div class="admin-topbar-actions">
-          <span class="admin-online-dot"></span><span>Admin RiasKu</span>
-          <span class="admin-avatar">AD</span>
+          <span class="admin-online-dot"></span><span>{{ auth.user?.name || 'Admin RiasKu' }}</span>
+          <button class="admin-avatar admin-profile-button" type="button" title="Keluar" @click="signOut">Keluar</button>
         </div>
       </header>
       <main class="admin-content"><RouterView /></main>

@@ -168,6 +168,13 @@ button { cursor: pointer; }
 .auth-card .button { width: 100%; }
 .auth-switch { margin: 0; color: var(--muted); font-size: 11px; text-align: center; }
 .auth-switch a { color: var(--rose); font-weight: 700; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.google-signin { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.google-signin-host { min-height: 40px; }
+.google-signin-host.is-disabled { pointer-events: none; opacity: .65; }
+.auth-card button:disabled { cursor: wait; opacity: .65; }
+.admin-profile-button { cursor: pointer; }
 .admin-layout { min-height: 100vh; display: grid; grid-template-columns: 245px 1fr; background: var(--paper); }
 .admin-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 25px 18px; border-right: 1px solid var(--border); background: #fff; }
 .admin-sidebar .eyebrow { margin-top: 30px; color: var(--muted); font-family: var(--mono); font-size: 9px; }
