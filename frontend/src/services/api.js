@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  baseURL: import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api',
   timeout: 15000,
   headers: {
     Accept: 'application/json',
@@ -10,7 +10,7 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('riasku_access_token')
+  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
