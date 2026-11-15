@@ -446,6 +446,7 @@ button { cursor: pointer; }
 .detail-option .form-control { max-width: 420px; }
 .detail-stock-row { width: 100%; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
 .stock-available { color: #34805d; font-weight: 700; }
+.stock-preorder { color: #b26a1b; font-weight: 700; }
 .stock-empty { color: #a63d4b; font-weight: 700; }
 .detail-buy-row { width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .detail-quantity { min-height: 43px; display: inline-flex; align-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 999px; background: #fff; }

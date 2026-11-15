@@ -24,10 +24,17 @@ function addProduct() {
     <div class="product-rating"><span>★★★★★</span> {{ product.rating }} ({{ product.reviewCount }} {{ product.reviewLabel || 'Ulasan' }})</div>
     <button class="review-link" type="button" @click="ui.openModal('review', { product })">Lihat ulasan pelanggan</button>
     <div class="product-price">{{ product.priceLabel }}</div>
-    <RouterLink v-if="product.type === 'service'" to="/consultation" class="product-action">◷ Konsultasi Jadwal</RouterLink>
+    <RouterLink v-if="product.type === 'service'" to="/consultation" class="product-action">Konsultasi Jadwal</RouterLink>
     <div v-else class="product-card-actions">
       <RouterLink :to="`/products/${product.id}`" class="product-action product-detail-action">Lihat Detail &amp; Beli</RouterLink>
-      <button class="product-action" type="button" :disabled="Number(product.stock ?? 0) <= 0" @click="addProduct">{{ Number(product.stock ?? 0) > 0 ? '＋ Keranjang' : 'Stok Habis' }}</button>
+      <button
+        class="product-action"
+        type="button"
+        :disabled="Number(product.stock ?? 0) <= 0 && product.stock_label !== 'Pre-Order'"
+        @click="addProduct"
+      >
+        {{ product.stock_label === 'Pre-Order' ? 'Pre-Order' : (Number(product.stock ?? 0) > 0 ? '＋ Keranjang' : 'Stok Habis') }}
+      </button>
     </div>
   </article>
 </template>
