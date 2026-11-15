@@ -3,9 +3,12 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
+import { logout } from '@/services/authService'
 
 const cart = useCartStore()
 const ui = useUiStore()
+const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const searchQuery = ref('')
@@ -15,6 +18,17 @@ const isProductRoute = computed(() => route.path.startsWith('/products'))
 function submitSearch() {
   const query = searchQuery.value.trim()
   if (query) router.push({ name: 'products', query: { q: query } })
+}
+
+async function signOut() {
+  try {
+    await logout()
+  } catch {
+    // Clear the local session even when the API is unreachable.
+  } finally {
+    auth.clearSession()
+    await router.push('/')
+  }
 }
 </script>
 
@@ -50,7 +64,8 @@ function submitSearch() {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4.5h2l2.1 10.1h9.8l2.1-7.1H6.2"/><circle cx="9.2" cy="18.5" r="1.2"/><circle cx="17" cy="18.5" r="1.2"/></svg>
           <span v-if="cartCount" class="cart-count">{{ cartCount }}</span>
         </RouterLink>
-        <button class="button button-primary button-login" type="button" @click="ui.openModal('login')">Masuk / Daftar</button>
+        <button v-if="auth.isAuthenticated && auth.user?.account_type === 'pelanggan'" class="button button-primary button-login" type="button" @click="signOut">Keluar</button>
+        <RouterLink v-else class="button button-primary button-login" to="/auth/login">Masuk / Daftar</RouterLink>
       </div>
     </div>
   </header>

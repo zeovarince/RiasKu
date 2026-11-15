@@ -9,7 +9,7 @@ const routes = [
       { path: 'products', name: 'products', component: () => import('@/views/customer/ProductListView.vue') },
       { path: 'products/:id', name: 'product-detail', component: () => import('@/views/customer/ProductDetailView.vue') },
       { path: 'cart', name: 'cart', component: () => import('@/views/customer/CartView.vue') },
-      { path: 'checkout', name: 'checkout', component: () => import('@/views/customer/CheckoutView.vue') },
+      { path: 'checkout', name: 'checkout', component: () => import('@/views/customer/CheckoutView.vue'), meta: { requiresCustomer: true } },
       { path: 'orders/track', name: 'order-track', component: () => import('@/views/customer/OrderStatusView.vue') },
       { path: 'consultation', name: 'consultation', component: () => import('@/views/customer/ConsultationView.vue') },
       { path: 'ai-assistant', name: 'ai-assistant', component: () => import('@/views/customer/AiAssistantView.vue') },
@@ -24,13 +24,20 @@ const routes = [
     ],
   },
   {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('@/views/auth/AdminLoginView.vue'),
+  },
+  {
     path: '/admin',
     component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { requiresAdmin: true },
     children: [
       { path: '', redirect: '/admin/dashboard' },
       { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
       { path: 'products', name: 'admin-products', component: () => import('@/views/admin/ProductsView.vue') },
       { path: 'products/create', name: 'admin-product-create', component: () => import('@/views/admin/ProductCreateView.vue') },
+      { path: 'products/:id/edit', name: 'admin-product-edit', component: () => import('@/views/admin/ProductCreateView.vue') },
       { path: 'categories', name: 'admin-categories', component: () => import('@/views/admin/CategoriesView.vue') },
       { path: 'reviews', name: 'admin-reviews', component: () => import('@/views/admin/ReviewsView.vue') },
       { path: 'orders', name: 'admin-orders', component: () => import('@/views/admin/OrdersView.vue') },
@@ -48,6 +55,24 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior() { return { top: 0, behavior: 'smooth' } },
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+  let user = null
+  try {
+    user = JSON.parse(localStorage.getItem('riasku_user') || 'null')
+  } catch {
+    localStorage.removeItem('riasku_user')
+  }
+
+  if (to.matched.some((record) => record.meta.requiresCustomer) && (!token || user?.account_type !== 'pelanggan')) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (to.matched.some((record) => record.meta.requiresAdmin) && (!token || user?.account_type !== 'admin')) {
+    return { name: 'admin-login', query: { redirect: to.fullPath } }
+  }
+  return true
 })
 
 export default router
