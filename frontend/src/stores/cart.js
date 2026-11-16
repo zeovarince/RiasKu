@@ -29,8 +29,8 @@ function readSavedCart() {
 }
 
 function remoteCartEnabled() {
-  return import.meta.env.VITE_CART_API_ENABLED === 'true' &&
-    Boolean(sessionStorage.getItem('riasku_access_token'))
+  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+  return import.meta.env.VITE_CART_API_ENABLED === 'true' && Boolean(token)
 }
 
 export const useCartStore = defineStore('cart', () => {

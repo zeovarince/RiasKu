@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'riasku_admin' => [
+        'name' => env('RIASKU_ADMIN_NAME', 'Admin RiasKu'),
+        'email' => env('RIASKU_ADMIN_EMAIL'),
+        'password' => env('RIASKU_ADMIN_PASSWORD'),
+    ],
+
 ];

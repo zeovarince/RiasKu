@@ -1,21 +1,41 @@
-import { api } from './api'
+import { dashboardApi } from './api'
 
-// Admin endpoints are prepared here. They intentionally do not assume a Laravel
-// response schema yet; coordinate the final payload contract with the backend team.
 export const adminService = {
-  dashboard: (params = {}) => api.get('/admin/dashboard', { params }),
-  products: (params = {}) => api.get('/admin/products', { params }),
-  createProduct: (payload) => api.post('/admin/products', payload),
-  categories: (params = {}) => api.get('/admin/categories', { params }),
-  createCategory: (payload) => api.post('/admin/categories', payload),
-  reviews: (params = {}) => api.get('/admin/reviews', { params }),
-  updateReview: (id, payload) => api.patch(`/admin/reviews/${id}`, payload),
-  orders: (params = {}) => api.get('/admin/orders', { params }),
-  orderDetail: (id) => api.get(`/admin/orders/${id}`),
-  updateOrderStatus: (id, payload) => api.patch(`/admin/orders/${id}/status`, payload),
-  incomingStock: (payload) => api.post('/admin/inventory/incoming', payload),
-  directSales: (params = {}) => api.get('/admin/sales/direct', { params }),
-  monthlyReport: (params = {}) => api.get('/admin/reports/monthly', { params }),
-  storeSettings: () => api.get('/admin/settings/store'),
-  updateStoreSettings: (payload) => api.put('/admin/settings/store', payload),
+  // Kategori
+  getCategories: () => dashboardApi.get('/kategori'),
+  createCategory: (payload) => dashboardApi.post('/kategori', payload),
+  updateCategory: (id, payload) => dashboardApi.put(`/kategori/${id}`, payload),
+  deleteCategory: (id) => dashboardApi.delete(`/kategori/${id}`),
+
+  // Produk
+  getProducts: (params = {}) => dashboardApi.get('/produk', { params }),
+  getProduct: (id) => dashboardApi.get(`/produk/${id}`),
+  createProduct: (payload) => dashboardApi.post('/produk', payload),
+  updateProduct: (id, payload) => dashboardApi.put(`/produk/${id}`, payload),
+  toggleProductStatus: (id, isActive) => dashboardApi.patch(`/produk/${id}/status`, { is_active: isActive }),
+
+  // Varian
+  addVariant: (productId, payload) => dashboardApi.post(`/produk/${productId}/varian`, payload),
+  updateVariant: (variantId, payload) => dashboardApi.put(`/varian/${variantId}`, payload),
+  toggleVariantStatus: (variantId, isActive) => dashboardApi.patch(`/varian/${variantId}/status`, { is_active: isActive }),
+
+  // Foto
+  uploadPhoto: (productId, formData) => dashboardApi.post(`/produk/${productId}/foto`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updatePhoto: (photoId, payload) => dashboardApi.patch(`/foto/${photoId}`, payload),
+  deletePhoto: (photoId) => dashboardApi.delete(`/foto/${photoId}`),
+
+  // Dashboard & Other
+  dashboard: (params = {}) => dashboardApi.get('/admin/dashboard', { params }),
+  reviews: (params = {}) => dashboardApi.get('/admin/reviews', { params }),
+  updateReview: (id, payload) => dashboardApi.patch(`/admin/reviews/${id}`, payload),
+  orders: (params = {}) => dashboardApi.get('/admin/orders', { params }),
+  orderDetail: (id) => dashboardApi.get(`/admin/orders/${id}`),
+  updateOrderStatus: (id, payload) => dashboardApi.patch(`/admin/orders/${id}/status`, payload),
+  incomingStock: (payload) => dashboardApi.post('/admin/inventory/incoming', payload),
+  directSales: (params = {}) => dashboardApi.get('/admin/sales/direct', { params }),
+  monthlyReport: (params = {}) => dashboardApi.get('/admin/reports/monthly', { params }),
+  storeSettings: () => dashboardApi.get('/admin/settings/store'),
+  updateStoreSettings: (payload) => dashboardApi.put('/admin/settings/store', payload),
 }

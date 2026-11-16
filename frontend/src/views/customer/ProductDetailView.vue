@@ -21,7 +21,23 @@ const variants = computed(() => Array.isArray(product.value?.variants) ? product
 const selectedVariant = computed(() => variants.value.find((variant) => String(variant.id) === String(selectedVariantId.value)) || variants.value[0] || null)
 const stock = computed(() => Number(selectedVariant.value?.stock ?? product.value?.stock ?? 0))
 const unitPrice = computed(() => Number(selectedVariant.value?.price ?? product.value?.price ?? 0))
-const canAdd = computed(() => product.value?.type !== 'service' && stock.value > 0 && quantity.value > 0 && quantity.value <= stock.value)
+const isPreorder = computed(() => Boolean(product.value?.stock_label === 'Pre-Order' || product.value?.is_preorder))
+const canAdd = computed(() => {
+  if (product.value?.type === 'service') return false
+  if (stock.value > 0) return quantity.value > 0 && quantity.value <= stock.value
+  if (isPreorder.value) return quantity.value > 0
+  return false
+})
+const stockStatusText = computed(() => {
+  if (stock.value > 0) return `Tersedia (${stock.value} item)`
+  if (isPreorder.value) return `Pre-Order${product.value?.preorder_estimate_days ? ` (Estimasi ${product.value.preorder_estimate_days} hari)` : ''}`
+  return 'Stok Habis'
+})
+const stockBadgeClass = computed(() => {
+  if (stock.value > 0) return 'stock-available'
+  if (isPreorder.value) return 'stock-preorder'
+  return 'stock-empty'
+})
 
 async function loadProduct(id) {
   loading.value = true
@@ -80,22 +96,24 @@ watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
         </div>
 
         <div class="detail-stock-row">
-          <span :class="stock > 0 ? 'stock-available' : 'stock-empty'">{{ stock > 0 ? `Stok tersedia: ${stock}` : 'Stok habis' }}</span>
+          <span :class="stockBadgeClass">{{ stockStatusText }}</span>
           <span v-if="product.sku">SKU: {{ product.sku }}</span>
         </div>
 
         <div v-if="product.type !== 'service'" class="detail-buy-row">
           <div class="detail-quantity" aria-label="Jumlah produk">
             <button type="button" aria-label="Kurangi jumlah" :disabled="quantity <= 1" @click="quantity--">−</button>
-            <input v-model.number="quantity" type="number" min="1" :max="stock" />
-            <button type="button" aria-label="Tambah jumlah" :disabled="quantity >= stock" @click="quantity++">+</button>
+            <input v-model.number="quantity" type="number" min="1" :max="stock > 0 ? stock : 999" />
+            <button type="button" aria-label="Tambah jumlah" :disabled="stock > 0 && quantity >= stock" @click="quantity++">+</button>
           </div>
-          <button class="button button-primary" type="button" :disabled="!canAdd" @click="addToCart">＋ Tambah ke Keranjang</button>
+          <button class="button button-primary" type="button" :disabled="!canAdd" @click="addToCart">
+            {{ isPreorder ? 'Pre-Order Sekarang' : '＋ Tambah ke Keranjang' }}
+          </button>
         </div>
         <RouterLink v-else to="/consultation" class="button button-primary">Konsultasi Jadwal</RouterLink>
 
         <p v-if="addedMessage" class="form-notice" role="status">{{ addedMessage }} <RouterLink to="/cart">Lihat keranjang</RouterLink></p>
-        <p v-if="stock <= 0 && product.type !== 'service'" class="form-error">Produk sedang tidak tersedia.</p>
+        <p v-if="!canAdd && product.type !== 'service'" class="form-error">Produk sedang tidak tersedia untuk dipesan.</p>
         <div class="detail-benefits">
           <span>✓ Produk pilihan RiasKu</span>
           <span>✓ COD area Surabaya</span>

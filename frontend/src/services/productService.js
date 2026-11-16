@@ -20,13 +20,35 @@ function normalizeCategory(category) {
 }
 
 export function normalizeProduct(product) {
-  const category = product.category && typeof product.category === 'object' ? product.category : null
-  const price = Number(product.price ?? product.sale_price ?? 0)
-  const variants = Array.isArray(product.variants) ? product.variants.map((variant) => ({
+  const category = product.category && typeof product.category === 'object' ? product.category : (product.kategori ?? null)
+  const price = Number(product.price ?? product.retail_price ?? product.sale_price ?? 0)
+  const packPrice = product.pack_price ? Number(product.pack_price) : null
+  const packQuantity = product.pack_quantity ? Number(product.pack_quantity) : null
+  const isPreorder = Boolean(product.is_preorder ?? product.bisa_preorder)
+  const preorderEstimateDays = product.preorder_estimate_days ?? null
+
+  const rawVariants = Array.isArray(product.variants) ? product.variants : (Array.isArray(product.varians) ? product.varians : [])
+  const variants = rawVariants.map((variant) => ({
     ...variant,
+    name: variant.name ?? variant.nama ?? 'Standar',
     price: Number(variant.price ?? price),
-    stock: Number(variant.stock ?? 0),
-  })) : []
+    stock: Number(variant.stock ?? variant.stok ?? 0),
+  }))
+
+  const stock = Number(
+    product.stock ?? product.total_stock ?? product.stock_available ??
+    (variants.length > 0 ? variants.reduce((sum, v) => sum + (v.stock || 0), 0) : 0)
+  )
+
+  let stockLabel = product.stock_label || product.label_stok
+  if (!stockLabel) {
+    if (stock > 0) stockLabel = 'Tersedia'
+    else if (isPreorder) stockLabel = 'Pre-Order'
+    else stockLabel = 'Stok Habis'
+  }
+
+  const primaryPhoto = product.primary_foto?.file_path || product.primaryFoto?.file_path || product.fotos?.[0]?.file_path
+  const imageUrl = product.image_url ?? product.image ?? (primaryPhoto ? `/storage/${primaryPhoto}` : null)
 
   return {
     ...product,
@@ -35,12 +57,18 @@ export function normalizeProduct(product) {
     sku: product.sku ?? product.code ?? null,
     price,
     priceLabel: product.priceLabel ?? formatRupiah(price),
-    image_url: product.image_url ?? product.image ?? null,
+    pack_price: packPrice,
+    pack_quantity: packQuantity,
+    packPriceLabel: packPrice ? formatRupiah(packPrice) : null,
+    image_url: imageUrl,
     category: category?.slug ?? product.category_slug ?? product.category ?? 'uncategorized',
     categoryLabel: category?.name ?? product.category_name ?? product.categoryLabel ?? 'Lainnya',
     rating: product.rating ?? product.average_rating ?? null,
     reviewCount: Number(product.reviewCount ?? product.review_count ?? product.reviews_count ?? 0),
-    stock: Number(product.stock ?? product.stock_available ?? 0),
+    stock,
+    stock_label: stockLabel,
+    is_preorder: isPreorder,
+    preorder_estimate_days: preorderEstimateDays,
     variants,
     art: product.art ?? product.art_type ?? 'cushion',
   }
