@@ -1,43 +1,12 @@
 <?php
 
-use App\Models\Pelanggan;
 use App\Models\Admin;
+use App\Models\Pelanggan;
 use App\Services\GoogleIdentityVerifier;
-use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
 
-beforeEach(function (): void {
-    Schema::create('admin', function (Blueprint $table): void {
-        $table->id();
-        $table->string('name');
-        $table->string('email')->unique();
-        $table->string('password_hash');
-        $table->boolean('is_active')->default(true);
-        $table->timestamps();
-    });
-
-    Schema::create('pelanggan', function (Blueprint $table): void {
-        $table->id();
-        $table->string('username')->unique();
-        $table->string('email')->unique();
-        $table->string('password_hash')->nullable();
-        $table->string('google_id')->nullable()->unique();
-        $table->boolean('is_active')->default(true);
-        $table->timestamps();
-    });
-
-    Schema::create('personal_access_tokens', function (Blueprint $table): void {
-        $table->id();
-        $table->morphs('tokenable');
-        $table->text('name');
-        $table->string('token', 64)->unique();
-        $table->text('abilities')->nullable();
-        $table->timestamp('last_used_at')->nullable();
-        $table->timestamp('expires_at')->nullable();
-        $table->timestamps();
-    });
-});
+uses(RefreshDatabase::class);
 
 it('registers customers and stores a password hash', function (): void {
     $response = $this->postJson('/api/auth/register', [
