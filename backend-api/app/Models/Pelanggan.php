@@ -37,4 +37,9 @@ class Pelanggan extends Authenticatable
     {
         return $this->hasOne(Keranjang::class, 'pelanggan_id');
     }
+
+    public function pesanans(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Pesanan::class, 'pelanggan_id');
+    }
 }

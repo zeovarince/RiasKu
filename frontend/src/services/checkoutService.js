@@ -6,6 +6,11 @@ export async function createOrder(payload) {
 }
 
 export async function getOrderStatus(orderCode) {
-  const response = await api.get(`/orders/${encodeURIComponent(orderCode)}`)
-  return response.data.data ?? response.data
+  try {
+    const response = await api.get(`/orders/${encodeURIComponent(orderCode)}/track`)
+    return response.data.data ?? response.data
+  } catch {
+    const response = await api.get(`/orders/${encodeURIComponent(orderCode)}`)
+    return response.data.data ?? response.data
+  }
 }

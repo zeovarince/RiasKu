@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\KategoriController;
+use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Middleware\EnsurePelanggan;
 use Illuminate\Http\Request;
@@ -31,9 +33,26 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
+// Public Tracking & Payment Webhook (PPL-19, PPL-20)
+Route::get('/orders/{orderCode}/track', [OrderController::class, 'track']);
+Route::post('/payments/midtrans-notification', [PaymentController::class, 'midtransNotification']);
+
 Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
-    Route::get('/orders', fn () => response()->json(['message' => 'Pesanan saya', 'data' => []]));
-    Route::post('/checkout', fn () => response()->json(['message' => 'Checkout berhasil', 'data' => []]));
+    // Orders & Checkout (PPL-19, PPL-20)
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::post('/checkout', function (Request $request) {
+        if ($request->has('customer_name')) {
+            return app(OrderController::class)->store($request);
+        }
+        return response()->json(['message' => 'Checkout berhasil', 'data' => []]);
+    });
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);
+
+    // Payments & Local Simulator (PPL-19)
+    Route::get('/payments/{id}', [PaymentController::class, 'status']);
+    Route::post('/payments/{id}/simulate-pay', [PaymentController::class, 'simulateSuccess']);
 
     // Remote Cart Endpoints (PPL-16)
     Route::get('/cart', [CartController::class, 'index']);
