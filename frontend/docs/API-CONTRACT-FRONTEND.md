@@ -48,8 +48,9 @@ Produk minimal memuat:
 
 ## Catatan integrasi
 
+- Base URL API pelanggan: `http://localhost:8000/api`; API panel admin: `http://localhost:8000/api/admin` (keduanya dari backend `backend-api/`).
 - Endpoint di atas adalah kontrak awal untuk disepakati dengan tim backend, bukan klaim bahwa endpoint tersebut sudah tersedia.
 - Jangan menyimpan secret/payment private key pada `VITE_*`; variabel Vite terekspos ke browser.
 - Jika API memakai Laravel Sanctum, sepakati strategi cookie/CSRF dengan backend. Jika memakai bearer token, jangan menyimpan token sensitif di localStorage tanpa pertimbangan keamanan.
-- Untuk development lokal lintas origin, backend perlu mengatur CORS agar mengizinkan origin frontend, misalnya `http://localhost:5173`.
+- Untuk development lokal lintas origin, backend perlu mengatur CORS agar mengizinkan origin frontend, misalnya `http://localhost:5173` (pelanggan) dan `http://localhost:5174` (panel admin).
 - Saat menjalankan via Docker Compose, browser tetap menggunakan `http://localhost:8000/api`, sedangkan koneksi antarkontainer memakai nama service Docker.

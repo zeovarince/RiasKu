@@ -44,14 +44,16 @@ npm run build
 Isi file `.env` lokal:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8000/api
+VITE_DASHBOARD_API_URL=http://localhost:8000/api/admin
 VITE_USE_MOCK_DATA=true
 VITE_CART_API_ENABLED=false
 ```
 
 | Variable | Fungsi |
 |---|---|
-| `VITE_API_BASE_URL` | Base URL Laravel API yang diakses browser. |
+| `VITE_API_URL` | Base URL API pelanggan (katalog, auth pelanggan, cart) yang diakses browser. |
+| `VITE_DASHBOARD_API_URL` | Base URL API panel admin. Semua endpoint admin berada di bawah `/api/admin`. |
 | `VITE_USE_MOCK_DATA=true` | Mengambil data produk/kategori dari `src/services/mockData.js`. Cocok saat backend belum siap. |
 | `VITE_USE_MOCK_DATA=false` | Mengambil produk/kategori dari Laravel API. |
 | `VITE_CART_API_ENABLED=true` | Mengaktifkan sinkronisasi cart ke endpoint Laravel. Membutuhkan Bearer token dan API cart sudah tersedia. |
@@ -223,7 +225,7 @@ Buat Pull Request dari branch fitur ke `development`, bukan ke `main`. Untuk iss
 ## 9. Troubleshooting
 
 - `npm run dev` tidak bisa: pastikan terminal berada di folder `frontend` dan `npm install` sudah dijalankan.
-- API gagal: cek `VITE_API_BASE_URL`, status Laravel, dan konfigurasi CORS Laravel.
+- API gagal: cek `VITE_API_URL` / `VITE_DASHBOARD_API_URL`, status Laravel, dan konfigurasi CORS Laravel.
 - Produk demo tidak muncul: pastikan `VITE_USE_MOCK_DATA=true` dan restart Vite.
 - Cart tidak tersinkron: pastikan user sudah login, token disimpan pada `sessionStorage` sebagai `riasku_access_token`, endpoint cart tersedia, lalu aktifkan `VITE_CART_API_ENABLED=true`.
 - File tidak muncul di Git: pastikan tidak berada di `node_modules/`, `dist/`, atau folder duplikat `frontend/frontend/`.
