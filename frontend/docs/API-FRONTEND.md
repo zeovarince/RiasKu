@@ -6,7 +6,8 @@ Dokumen ini mendeskripsikan API yang dibutuhkan frontend Vue untuk **PPL-15 Kata
 
 ## 1. Konvensi umum
 
-- Base URL development: `http://localhost:8000/api`
+- Base URL development pelanggan: `http://localhost:8000/api`
+- Base URL development panel admin: `http://localhost:8000/api/admin` (satu backend `backend-api/`)
 - Header: `Accept: application/json`
 - Request body: `Content-Type: application/json`
 - Format sukses: JSON dengan properti `data`.
@@ -200,7 +201,8 @@ Nama mekanisme token perlu disamakan dengan backend (misalnya Laravel Sanctum). 
 ### Mode frontend mandiri
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8000/api
+VITE_DASHBOARD_API_URL=http://localhost:8000/api/admin
 VITE_USE_MOCK_DATA=true
 VITE_CART_API_ENABLED=false
 ```
@@ -210,7 +212,8 @@ Katalog dan kategori berasal dari `src/services/mockData.js`; cart disimpan loka
 ### Mode integrasi backend
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8000/api
+VITE_DASHBOARD_API_URL=http://localhost:8000/api/admin
 VITE_USE_MOCK_DATA=false
 VITE_CART_API_ENABLED=true
 ```

@@ -4,6 +4,8 @@ Dokumen ini merangkum endpoint API pelanggan yang dipakai frontend RiasKu.
 
 ## Konfigurasi dan autentikasi
 
+- Base URL lokal API pelanggan: `http://localhost:8000/api`.
+- Base URL lokal API admin: `http://localhost:8000/api/admin`; keduanya dijalankan dari `backend-api/`.
 - Atur `VITE_USE_MOCK_DATA=false` di `frontend/.env` untuk memakai katalog dari API. Nilai selain `false` mengaktifkan mock data.
 - Endpoint pelanggan terlindungi memakai `auth:sanctum` dan middleware `EnsurePelanggan`. Kirim token Sanctum sebagai bearer token.
 - Semua endpoint memakai prefix `/api`.
@@ -124,4 +126,4 @@ Request yang tidak valid mengembalikan HTTP `422` dengan detail pada `errors`. P
 - Endpoint pembayaran `/api/orders/{orderId}/payments` dan booking `/api/bookings` belum tersedia pada route API pelanggan saat ini.
 - Jangan mengirim atau mempercayai `unit_price`, `weight_grams`, `shipping_cost`, maupun `total` dari client.
 - Jangan menyimpan API key atau secret di variabel `VITE_*`; nilainya dapat diakses dari browser.
-- Untuk development lintas origin, konfigurasi CORS backend agar mengizinkan origin frontend, misalnya `http://localhost:5173`.
+- Untuk development lintas origin, konfigurasi CORS agar mengizinkan frontend pelanggan (`http://localhost:5173`) dan panel admin (`http://localhost:5174`).
