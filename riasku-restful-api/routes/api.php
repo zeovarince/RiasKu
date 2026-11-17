@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\CustomerAuthController;
+use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\ProdukController;
+use App\Http\Controllers\Api\ShippingController;
 use App\Http\Middleware\EnsurePelanggan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +26,8 @@ Route::get('/produk', [ProdukController::class, 'index']);
 Route::get('/products/{id}', [ProdukController::class, 'show']);
 Route::get('/produk/{id}', [ProdukController::class, 'show']);
 
+Route::get('/shipping/zones', [ShippingController::class, 'zones'])->middleware('throttle:60,1');
+
 // Protected Customer Routes
 Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
     Route::get('/me', [CustomerAuthController::class, 'me']);
@@ -31,8 +35,10 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
 });
 
 Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
-    Route::get('/orders', fn () => response()->json(['message' => 'Pesanan saya', 'data' => []]));
-    Route::post('/checkout', fn () => response()->json(['message' => 'Checkout berhasil', 'data' => []]));
+    Route::get('/orders', [CheckoutController::class, 'index']);
+    Route::get('/orders/{orderCode}', [CheckoutController::class, 'show']);
+    Route::post('/checkout', [CheckoutController::class, 'store']);
+    Route::post('/shipping/rates', [ShippingController::class, 'rates']);
 
     // Remote Cart Endpoints
     Route::get('/cart', fn () => response()->json(['message' => 'Keranjang belanja', 'data' => ['items' => []]]));

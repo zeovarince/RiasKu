@@ -1,7 +1,7 @@
 import { api } from './api'
 
 export async function createOrder(payload) {
-  const response = await api.post('/orders', payload)
+  const response = await api.post('/checkout', payload)
   return response.data.data ?? response.data
 }
 
