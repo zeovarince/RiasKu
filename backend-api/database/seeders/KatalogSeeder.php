@@ -85,9 +85,27 @@ class KatalogSeeder extends Seeder
             ProdukVarian::create(['produk_id' => $p3->id, 'name' => 'Translucent', 'stock' => 3, 'is_active' => true]);
         }
 
-        // Product 4: Pre-Order Special Edition Tint
-        if (!Produk::where('sku', 'RSK-PO-01')->exists()) {
+        // Product 4: Paket Rias Pengantin Modern (Jasa Rias)
+        if (!Produk::where('sku', 'RSK-BRV-010')->exists()) {
             $p4 = Produk::create([
+                'kategori_id' => $categoryMap['rias-pengantin']->id,
+                'sku' => 'RSK-BRV-010',
+                'name' => 'Paket Rias Pengantin Modern',
+                'brand' => 'RiasKu Bridal',
+                'weight_grams' => 0,
+                'base_price' => 1848000,
+                'retail_price' => 1850000,
+                'description' => 'Paket layanan rias pengantin modern bersama makeup artist RiasKu.',
+                'is_preorder' => false,
+                'is_active' => true,
+            ]);
+
+            ProdukVarian::create(['produk_id' => $p4->id, 'name' => 'Paket Lengkap', 'stock' => 99, 'is_active' => true]);
+        }
+
+        // Product 5: Pre-Order Special Edition Tint
+        if (!Produk::where('sku', 'RSK-PO-01')->exists()) {
+            $p5 = Produk::create([
                 'kategori_id' => $categoryMap['lip-care']->id,
                 'sku' => 'RSK-PO-01',
                 'name' => 'Special Edition Velvet Tint (PO)',
@@ -101,7 +119,7 @@ class KatalogSeeder extends Seeder
                 'is_active' => true,
             ]);
 
-            ProdukVarian::create(['produk_id' => $p4->id, 'name' => 'Burgundy Rose', 'stock' => 0, 'is_active' => true]);
+            ProdukVarian::create(['produk_id' => $p5->id, 'name' => 'Burgundy Rose', 'stock' => 0, 'is_active' => true]);
         }
     }
 }

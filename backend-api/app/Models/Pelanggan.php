@@ -32,4 +32,9 @@ class Pelanggan extends Authenticatable
     {
         return (string) $this->password_hash;
     }
+
+    public function keranjang(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Keranjang::class, 'pelanggan_id');
+    }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\ProdukController;
@@ -34,10 +35,10 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
     Route::get('/orders', fn () => response()->json(['message' => 'Pesanan saya', 'data' => []]));
     Route::post('/checkout', fn () => response()->json(['message' => 'Checkout berhasil', 'data' => []]));
 
-    // Remote Cart Endpoints
-    Route::get('/cart', fn () => response()->json(['message' => 'Keranjang belanja', 'data' => ['items' => []]]));
-    Route::post('/cart/items', fn (Request $request) => response()->json(['message' => 'Item ditambahkan ke keranjang server', 'data' => $request->all()]));
-    Route::patch('/cart/items/{id}', fn (Request $request, $id) => response()->json(['message' => 'Item keranjang diperbarui', 'data' => array_merge(['id' => $id], $request->all())]));
-    Route::delete('/cart/items/{id}', fn ($id) => response()->json(['message' => 'Item keranjang dihapus', 'data' => ['id' => $id]]));
-    Route::delete('/cart', fn () => response()->json(['message' => 'Keranjang server dikosongkan', 'data' => []]));
+    // Remote Cart Endpoints (PPL-16)
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart/items', [CartController::class, 'store']);
+    Route::patch('/cart/items/{id}', [CartController::class, 'update']);
+    Route::delete('/cart/items/{id}', [CartController::class, 'destroy']);
+    Route::delete('/cart', [CartController::class, 'clear']);
 });
