@@ -1,59 +1,67 @@
-# RiasKu Frontend API Contract
+# Kontrak API Frontend
 
-Frontend masih menyediakan mock data katalog dengan `VITE_USE_MOCK_DATA=true`. Alur checkout memakai Laravel API pelanggan dan token Sanctum.
+Dokumen ini merangkum endpoint API pelanggan yang dipakai frontend RiasKu.
 
-Saat mengintegrasikan katalog live, ubah `VITE_USE_MOCK_DATA=false` pada `frontend/.env`; endpoint yang digunakan frontend tercantum di bawah.
+## Konfigurasi dan autentikasi
 
-| Method | Endpoint | Penggunaan |
-|---|---|---|
-| GET | `/api/categories` | Mengambil kategori pada homepage |
-| GET | `/api/products?featured=1&per_page=4` | Mengambil produk best seller |
-| GET | `/api/products` | Katalog dan pencarian produk |
-| GET | `/api/products/{id}` | Detail produk |
-| POST | `/api/auth/login` | Login pelanggan/admin |
-| POST | `/api/auth/register` | Registrasi pelanggan |
-| POST | `/api/auth/logout` | Logout |
-| GET | `/api/shipping/zones?q=` | Daftar zona pengiriman aktif (publik) |
-| POST | `/api/shipping/rates` | Menghitung berat dan opsi ongkir (pelanggan terautentikasi) |
-| POST | `/api/checkout` | Membuat pesanan dengan harga dan ongkir hasil hitung server |
-| GET | `/api/orders` | Daftar pesanan milik pelanggan |
-| GET | `/api/orders/{orderCode}` | Melihat status pesanan milik pelanggan |
-| POST | `/api/orders/{orderId}/payments` | Membuat instruksi pembayaran online |
-| POST | `/api/bookings` | Permintaan konsultasi/reservasi |
+- Atur `VITE_USE_MOCK_DATA=false` di `frontend/.env` untuk memakai katalog dari API. Nilai selain `false` mengaktifkan mock data.
+- Endpoint pelanggan terlindungi memakai `auth:sanctum` dan middleware `EnsurePelanggan`. Kirim token Sanctum sebagai bearer token.
+- Semua endpoint memakai prefix `/api`.
 
-## Bentuk response yang disarankan
+## Endpoint
 
-Gunakan format konsisten:
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| POST | `/api/auth/register` | Publik | Registrasi pelanggan |
+| POST | `/api/auth/login` | Publik | Login pelanggan |
+| POST | `/api/auth/google` | Publik | Login Google |
+| GET | `/api/auth/me` | Pelanggan | Profil pelanggan aktif |
+| POST | `/api/auth/logout` | Pelanggan | Menghapus token aktif |
+| GET | `/api/categories` | Publik | Daftar kategori |
+| GET | `/api/products` | Publik | Katalog dan pencarian produk |
+| GET | `/api/products/{id}` | Publik | Detail produk |
+| GET | `/api/shipping/zones?q=` | Publik | Zona aktif; dibatasi 60 request per menit |
+| POST | `/api/shipping/rates` | Pelanggan | Quote berat dan ongkir |
+| POST | `/api/checkout` | Pelanggan | Membuat pesanan |
+| GET | `/api/orders` | Pelanggan | Daftar pesanan milik pelanggan |
+| GET | `/api/orders/{orderCode}` | Pelanggan | Detail dan status pesanan milik pelanggan |
+
+`GET /api/products` menerima parameter `q` atau `search`, `category`, `sort`, `per_page`, dan `page`.
+Respons daftar produk dan kategori menggunakan envelope `message` dan `data`; daftar produk dapat menyertakan `meta` saat paginasi. Frontend menormalisasi atribut produk dan variasi sebelum dipakai oleh komponen.
+
+## Quote ongkir
+
+`POST /api/shipping/rates` memerlukan token pelanggan. Harga, berat, dan ongkir selalu dihitung ulang oleh server.
+
+Request hanya mengirim zona, produk, varian, dan jumlah:
 
 ```json
 {
-  "data": [],
-  "message": "OK"
+  "destination_zone_id": 85,
+  "items": [
+    {
+      "product_id": 12,
+      "variant_id": 34,
+      "quantity": 1
+    }
+  ]
 }
 ```
 
-Produk minimal memuat:
+Contoh response:
 
 ```json
 {
-  "id": 1,
-  "code": "RSK-CUSH-01",
-  "name": "Velvet Matte Cushion SPF 35",
-  "price": 185000,
-  "image_url": null,
-  "category": "complexion",
-  "rating": 4.9,
-  "review_count": 184,
-  "stock": 10,
-  "is_featured": true
-}
-```
-
-Quote pengiriman menghitung ulang berat produk dan kemasan di server. Berat tagihan ada pada setiap opsi karena mengikuti aturan kurir:
-
-```json
-{
+  "message": "Ongkos kirim berhasil dihitung.",
   "data": {
+    "destination": {
+      "id": 85,
+      "province": "Jawa Timur",
+      "city": "Surabaya",
+      "district": "Genteng",
+      "postal_code": "60271"
+    },
+    "subtotal": 52000,
     "weight_grams": 2700,
     "packaging_weight_grams": 0,
     "options": [
@@ -72,13 +80,48 @@ Quote pengiriman menghitung ulang berat produk dan kemasan di server. Berat tagi
 }
 ```
 
-Tarif seed adalah estimasi awal dan harus diverifikasi terhadap daftar tarif resmi JNE/J&T. Berat volumetrik belum aktif karena produk belum memiliki kolom dimensi; setelah kolom tersebut tersedia, berat tagihan produk menggunakan nilai terbesar antara berat aktual dan volumetrik (`P × L × T / 6000` kg).
+`weight_grams` adalah berat aktual produk ditambah kemasan. Berat tagihan ada pada setiap opsi karena mengikuti aturan kurir. Tarif seed merupakan estimasi awal dan masih perlu diverifikasi terhadap tarif resmi JNE/J&T.
+
+## Checkout dan pesanan
+
+`POST /api/checkout` menerima data penerima, metode pembayaran, zona, layanan yang dipilih, dan item:
+
+```json
+{
+  "name": "Nama Penerima",
+  "phone": "08123456789",
+  "address": "Alamat lengkap",
+  "payment_method": "online",
+  "destination_zone_id": 85,
+  "courier": "JNE",
+  "service": "REG",
+  "notes": null,
+  "items": [
+    {
+      "product_id": 12,
+      "variant_id": 34,
+      "quantity": 1
+    }
+  ]
+}
+```
+
+Respons checkout memuat pesanan dan item, termasuk `order_code`, `subtotal`, `shipping_cost`, `total`, `weight_grams`, `packaging_weight_grams`, serta `billable_weight_kg` untuk layanan terpilih. Harga dan total final dari client tidak dipakai.
+
+Request yang tidak valid mengembalikan HTTP `422` dengan detail pada `errors`. Pesanan dan daftar pesanan hanya dapat diakses oleh pelanggan pemiliknya.
+
+## Aturan berat dan ongkir
+
+- Berat aktual produk dihitung dari `weight_grams × quantity`. Jika berat produk nol, server memakai `shipping.default_weight_grams`.
+- Server menambahkan `shipping.packaging_weight_grams` satu kali per pesanan.
+- JNE dan J&T memakai minimum tagihan 1 kg dan pembulatan ke atas per kg. Ongkir adalah berat tagihan dikali tarif per kg.
+- Ambang gratis ongkir, jika diaktifkan, mengubah biaya menjadi nol tanpa mengubah berat yang dikembalikan.
+- Berat volumetrik belum aktif karena tabel produk belum memiliki dimensi. Setelah kolom dimensi tersedia, gunakan nilai terbesar antara berat aktual dan berat volumetrik (`P × L × T / 6000` kg).
 
 ## Catatan integrasi
 
-- Endpoint checkout dan pengiriman di atas tersedia pada API pelanggan; endpoint katalog/pembayaran lainnya tetap mengikuti implementasi backend masing-masing.
-- Isi quote checkout hanya mengirim product ID, variant ID, jumlah, dan zona. Harga, berat, serta ongkir dihitung ulang oleh server.
-- Jangan menyimpan secret/payment private key pada `VITE_*`; variabel Vite terekspos ke browser.
-- Jika API memakai Laravel Sanctum, sepakati strategi cookie/CSRF dengan backend. Jika memakai bearer token, jangan menyimpan token sensitif di localStorage tanpa pertimbangan keamanan.
-- Untuk development lokal lintas origin, backend perlu mengatur CORS agar mengizinkan origin frontend, misalnya `http://localhost:5173`.
-- Saat menjalankan via Docker Compose, browser tetap menggunakan `http://localhost:8000/api`, sedangkan koneksi antarkontainer memakai nama service Docker.
+- Cart frontend disimpan lokal. Endpoint `/api/cart` yang tersedia di backend masih stub dan bukan sumber data checkout.
+- Endpoint pembayaran `/api/orders/{orderId}/payments` dan booking `/api/bookings` belum tersedia pada route API pelanggan saat ini.
+- Jangan mengirim atau mempercayai `unit_price`, `weight_grams`, `shipping_cost`, maupun `total` dari client.
+- Jangan menyimpan API key atau secret di variabel `VITE_*`; nilainya dapat diakses dari browser.
+- Untuk development lintas origin, konfigurasi CORS backend agar mengizinkan origin frontend, misalnya `http://localhost:5173`.
