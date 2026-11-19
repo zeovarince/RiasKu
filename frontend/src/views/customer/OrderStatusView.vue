@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaymentModal from '@/components/PaymentModal.vue'
 import { getOrderStatus } from '@/services/checkoutService'
+import { syncPaymentStatus } from '@/services/paymentService'
 import { formatRupiah } from '@/utils/currency'
 
 const route = useRoute()
@@ -93,6 +94,24 @@ function handlePaymentSuccess() {
   showPaymentModal.value = false
   if (order.value?.order_code) {
     searchOrder(order.value.order_code)
+  }
+}
+
+const isSyncing = ref(false)
+const syncFeedback = ref('')
+
+async function handleSyncLiveStatus() {
+  if (!order.value?.order_code || isSyncing.value) return
+  isSyncing.value = true
+  syncFeedback.value = ''
+  try {
+    const result = await syncPaymentStatus(order.value.order_code)
+    syncFeedback.value = result.message || 'Status berhasil disinkronkan dari Midtrans.'
+    await searchOrder(order.value.order_code)
+  } catch (err) {
+    syncFeedback.value = err.response?.data?.message || 'Gagal memeriksa status ke Midtrans.'
+  } finally {
+    isSyncing.value = false
   }
 }
 
@@ -261,14 +280,28 @@ watch(() => route.query.code, (newCode) => {
           <p>
             Pembayaran Anda belum terkonfirmasi. Silakan selesaikan pembayaran melalui channel yang Anda pilih agar pesanan segera diproses.
           </p>
-          <button
-            v-if="order.payment"
-            class="button button-primary button-reopen-pay"
-            type="button"
-            @click="showPaymentModal = true"
-          >
-            💳 Buka Instruksi / Simulasikan Pembayaran
-          </button>
+          <div class="online-action-row" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+            <button
+              v-if="order.payment"
+              class="button button-primary button-reopen-pay"
+              type="button"
+              @click="showPaymentModal = true"
+            >
+              💳 Buka Instruksi Pembayaran Midtrans
+            </button>
+            <button
+              class="button button-outline"
+              type="button"
+              :disabled="isSyncing"
+              style="padding: 0.6rem 1rem; font-size: 0.85rem;"
+              @click="handleSyncLiveStatus"
+            >
+              {{ isSyncing ? 'Memeriksa Midtrans...' : '🔄 Cek Status Midtrans' }}
+            </button>
+          </div>
+          <p v-if="syncFeedback" class="sync-feedback-text" style="font-size: 0.8rem; margin-top: 0.5rem; color: #166534; font-weight: 600;">
+            {{ syncFeedback }}
+          </p>
         </div>
 
         <!-- Jika sudah lunas -->

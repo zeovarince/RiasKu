@@ -6,51 +6,329 @@ use App\Models\Pembayaran;
 use App\Models\Pesanan;
 use Exception;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class MidtransService
 {
     protected string $serverKey;
     protected string $clientKey;
+    protected string $merchantId;
     protected bool $isProduction;
     protected bool $isMock;
+    protected string $baseUrl;
 
     public function __construct()
     {
-        $this->serverKey = (string) env('MIDTRANS_SERVER_KEY', '');
-        $this->clientKey = (string) env('MIDTRANS_CLIENT_KEY', '');
-        $this->isProduction = (bool) env('MIDTRANS_IS_PRODUCTION', false);
-        $this->isMock = (bool) env('MIDTRANS_MOCK', empty($this->serverKey));
+        $config = config('services.midtrans');
+
+        $this->serverKey = (string) ($config['server_key'] ?? env('MIDTRANS_SERVER_KEY', ''));
+        $this->clientKey = (string) ($config['client_key'] ?? env('MIDTRANS_CLIENT_KEY', ''));
+        $this->merchantId = (string) ($config['merchant_id'] ?? env('MIDTRANS_MERCHANT_ID', ''));
+        $this->isProduction = (bool) ($config['is_production'] ?? env('MIDTRANS_IS_PRODUCTION', false));
+        $this->baseUrl = (string) ($config['base_url'] ?? env('MIDTRANS_BASE_URL', 'https://api.sandbox.midtrans.com'));
+
+        // Jika server key kosong, otomatis pakai mode simulasi lokal
+        $this->isMock = empty($this->serverKey);
     }
 
+    /**
+     * Base URL endpoint Midtrans Core API v2.
+     */
     public function getBaseUrl(): string
     {
-        return $this->isProduction
-            ? 'https://api.midtrans.com/v2'
-            : 'https://api.sandbox.midtrans.com/v2';
+        return rtrim($this->baseUrl, '/') . '/v2';
     }
 
+    /**
+     * Authorization header untuk Midtrans Core API.
+     */
+    private function authHeader(): string
+    {
+        return 'Basic ' . base64_encode($this->serverKey . ':');
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // CHARGE (Buat Transaksi Baru)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Charge: Membuat transaksi pembayaran.
+     * - COD → generateCodCharge (tidak memanggil Midtrans)
+     * - Server key kosong → generateMockCharge (simulasi lokal)
+     * - Server key terisi → chargeRealMidtrans (Midtrans Sandbox/Prod)
+     */
     public function charge(Pesanan $pesanan, string $channel): array
     {
+        // PPL-20: COD Surabaya tidak memanggil Midtrans sama sekali
         if ($channel === 'cash' || $pesanan->payment_method === 'cod') {
             return $this->generateCodCharge($pesanan);
         }
 
-        if ($this->isMock || empty($this->serverKey)) {
+        // Jika server key kosong → simulasi lokal
+        if ($this->isMock) {
+            Log::info('[MidtransService] Mode simulasi lokal aktif (MIDTRANS_SERVER_KEY kosong).');
             return $this->generateMockCharge($pesanan, $channel);
         }
 
+        // Panggil Midtrans Sandbox/Production asli
         try {
+            Log::info("[MidtransService] Charge real Midtrans: order={$pesanan->order_code}, channel={$channel}");
             return $this->chargeRealMidtrans($pesanan, $channel);
         } catch (Exception $e) {
-            // Fallback graceful ke simulator jika koneksi Midtrans Sandbox sedang gangguan/offline
+            Log::warning("[MidtransService] Fallback ke simulasi lokal: {$e->getMessage()}");
             return $this->generateMockCharge($pesanan, $channel, 'Fallback dari Midtrans Sandbox: ' . $e->getMessage());
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // CHARGE REAL MIDTRANS (Core API POST /v2/charge)
+    // ─────────────────────────────────────────────────────────────────
+
+    private function chargeRealMidtrans(Pesanan $pesanan, string $channel): array
+    {
+        $payload = [
+            'transaction_details' => [
+                'order_id' => $pesanan->order_code,
+                'gross_amount' => (int) $pesanan->total_amount,
+            ],
+            'customer_details' => [
+                'first_name' => $pesanan->customer_name,
+                'phone' => $pesanan->customer_phone,
+                'email' => $pesanan->pelanggan?->email ?? 'customer@riasku.com',
+            ],
+        ];
+
+        // Map channel ke payload Midtrans Core API
+        switch ($channel) {
+            case 'qris':
+                $payload['payment_type'] = 'qris';
+                $payload['qris'] = ['acquirer' => 'gopay'];
+                break;
+
+            case 'bca_va':
+                $payload['payment_type'] = 'bank_transfer';
+                $payload['bank_transfer'] = ['bank' => 'bca'];
+                break;
+
+            case 'bni_va':
+                $payload['payment_type'] = 'bank_transfer';
+                $payload['bank_transfer'] = ['bank' => 'bni'];
+                break;
+
+            case 'bri_va':
+                $payload['payment_type'] = 'bank_transfer';
+                $payload['bank_transfer'] = ['bank' => 'bri'];
+                break;
+
+            case 'mandiri_va':
+                $payload['payment_type'] = 'echannel';
+                $payload['echannel'] = [
+                    'bill_info1' => 'Pembayaran RiasKu',
+                    'bill_info2' => $pesanan->order_code,
+                ];
+                break;
+
+            case 'gopay':
+                $payload['payment_type'] = 'gopay';
+                $payload['gopay'] = [
+                    'enable_callback' => true,
+                    'callback_url' => config('app.url') . '/api/payments/midtrans/webhook',
+                ];
+                break;
+
+            case 'shopeepay':
+                $payload['payment_type'] = 'shopeepay';
+                $payload['shopeepay'] = [
+                    'callback_url' => config('app.url') . '/order-status',
+                ];
+                break;
+
+            default:
+                // Default ke QRIS untuk channel tidak dikenal
+                $payload['payment_type'] = 'qris';
+                $payload['qris'] = ['acquirer' => 'gopay'];
+                break;
+        }
+
+        $response = Http::withHeaders([
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+            'Authorization' => $this->authHeader(),
+        ])->timeout(20)->post($this->getBaseUrl() . '/charge', $payload);
+
+        if (!$response->successful()) {
+            $body = $response->body();
+            Log::error("[MidtransService] Charge gagal: HTTP {$response->status()}, body: {$body}");
+            throw new Exception("Midtrans charge failed (HTTP {$response->status()}): {$body}");
+        }
+
+        $res = $response->json();
+
+        Log::info('[MidtransService] Charge berhasil', [
+            'transaction_id' => $res['transaction_id'] ?? '-',
+            'payment_type' => $res['payment_type'] ?? '-',
+            'status' => $res['transaction_status'] ?? '-',
+        ]);
+
+        return $this->parseChargeResponse($res, $pesanan, $channel);
+    }
+
+    /**
+     * Parse response dari Midtrans Core API /v2/charge.
+     */
+    private function parseChargeResponse(array $res, Pesanan $pesanan, string $channel): array
+    {
+        $paymentType = $res['payment_type'] ?? $channel;
+
+        // ---- Ambil QR Code URL dari actions ----
+        $qrUrl = null;
+        $deeplinkUrl = null;
+        if (!empty($res['actions'])) {
+            foreach ($res['actions'] as $action) {
+                if (($action['name'] ?? '') === 'generate-qr-code') {
+                    $qrUrl = $action['url'] ?? null;
+                }
+                if (($action['name'] ?? '') === 'deeplink-redirect') {
+                    $deeplinkUrl = $action['url'] ?? null;
+                }
+            }
+            // Fallback jika tidak ada nama spesifik
+            if (!$qrUrl && !$deeplinkUrl) {
+                $qrUrl = $res['actions'][0]['url'] ?? null;
+                $deeplinkUrl = $res['actions'][1]['url'] ?? ($res['actions'][0]['url'] ?? null);
+            }
+        }
+
+        // ---- VA Number ----
+        $bank = null;
+        $vaNumber = null;
+        if (!empty($res['va_numbers'])) {
+            $bank = $res['va_numbers'][0]['bank'] ?? null;
+            $vaNumber = $res['va_numbers'][0]['va_number'] ?? null;
+        }
+        // Permata VA
+        if (!$vaNumber && !empty($res['permata_va_number'])) {
+            $bank = 'permata';
+            $vaNumber = $res['permata_va_number'];
+        }
+
+        // ---- Bill Key / Biller Code (Mandiri echannel) ----
+        $billKey = $res['bill_key'] ?? null;
+        $billerCode = $res['biller_code'] ?? null;
+
+        // ---- QR String ----
+        $qrString = $res['qr_string'] ?? null;
+
+        // ---- Expiry Time ----
+        $expiryTime = null;
+        if (!empty($res['expiry_time'])) {
+            try {
+                $expiryTime = \Carbon\Carbon::parse($res['expiry_time']);
+            } catch (\Throwable) {
+                $expiryTime = now()->addHours(24);
+            }
+        } else {
+            $expiryTime = now()->addHours(24);
+        }
+
+        // ---- Instructions ----
+        $instructions = $this->generateInstructions($channel, $pesanan, [
+            'va_number' => $vaNumber,
+            'bill_key' => $billKey,
+            'biller_code' => $billerCode,
+        ]);
+
+        return [
+            'transaction_id' => $res['transaction_id'] ?? ('MID-' . Str::upper(Str::random(10))),
+            'payment_type' => $paymentType,
+            'bank' => $bank,
+            'va_number' => $vaNumber,
+            'bill_key' => $billKey,
+            'biller_code' => $billerCode,
+            'qr_string' => $qrString,
+            'qr_url' => $qrUrl,
+            'deeplink_url' => $deeplinkUrl,
+            'gross_amount' => (int) ($res['gross_amount'] ?? $pesanan->total_amount),
+            'transaction_status' => $res['transaction_status'] ?? 'pending',
+            'expiry_time' => $expiryTime,
+            'instructions' => $instructions,
+            'payload_response' => $res,
+            'midtrans_mode' => 'live_sandbox',
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // SYNC STATUS (GET /v2/{order_id}/status)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Memanggil Midtrans GET /v2/{order_id}/status untuk sinkronisasi
+     * status pembayaran secara real-time (pengganti webhook untuk localhost).
+     */
+    public function syncTransactionStatus(string $orderId): ?array
+    {
+        if ($this->isMock) {
+            return null; // Tidak bisa sync ke Midtrans jika mode simulasi
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'Authorization' => $this->authHeader(),
+            ])->timeout(15)->get($this->getBaseUrl() . '/' . $orderId . '/status');
+
+            if (!$response->successful()) {
+                Log::warning("[MidtransService] Sync status gagal untuk {$orderId}: HTTP {$response->status()}");
+                return null;
+            }
+
+            return $response->json();
+        } catch (Exception $e) {
+            Log::warning("[MidtransService] Sync status exception: {$e->getMessage()}");
+            return null;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // WEBHOOK SIGNATURE VERIFICATION
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Verifikasi signature_key dari Midtrans notification webhook.
+     * signature_key = SHA512(order_id + status_code + gross_amount + server_key)
+     */
+    public function verifySignature(string $orderId, string $statusCode, string $grossAmount, string $signatureKey): bool
+    {
+        $computed = hash('sha512', $orderId . $statusCode . $grossAmount . $this->serverKey);
+        return hash_equals($computed, $signatureKey);
+    }
+
+    /**
+     * Apakah server key dikonfigurasi (mode Midtrans asli)?
+     */
+    public function isLiveMode(): bool
+    {
+        return !$this->isMock;
+    }
+
+    /**
+     * Dapatkan client key untuk frontend (aman diekspos).
+     */
+    public function getClientKey(): string
+    {
+        return $this->clientKey;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // COD CHARGE (PPL-20 - tidak memanggil Midtrans)
+    // ─────────────────────────────────────────────────────────────────
+
     private function generateCodCharge(Pesanan $pesanan): array
     {
         $transactionId = 'COD-' . $pesanan->order_code;
+        $amount = $pesanan->total_amount;
+
         return [
             'transaction_id' => $transactionId,
             'payment_type' => 'cod_cash',
@@ -61,11 +339,11 @@ class MidtransService
             'qr_string' => null,
             'qr_url' => null,
             'deeplink_url' => null,
-            'gross_amount' => $pesanan->total_amount,
+            'gross_amount' => $amount,
             'transaction_status' => 'pending',
             'expiry_time' => now()->addDays(3),
             'instructions' => [
-                'Siapkan uang pas sebesar Rp ' . number_format($pesanan->total_amount, 0, ',', '.') . ' saat pesanan sampai.',
+                'Siapkan uang pas sebesar Rp ' . number_format($amount, 0, ',', '.') . ' saat pesanan sampai.',
                 'Kurir RiasKu akan mengantarkan pesanan ke alamat tujuan Anda di Kota Surabaya.',
                 'Lakukan pengecekan fisik barang bersama kurir sebelum melakukan pembayaran tunai.',
             ],
@@ -73,8 +351,13 @@ class MidtransService
                 'mode' => 'cod',
                 'description' => 'Cash On Delivery Surabaya',
             ],
+            'midtrans_mode' => 'cod',
         ];
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MOCK CHARGE (Simulasi lokal jika server key kosong)
+    // ─────────────────────────────────────────────────────────────────
 
     private function generateMockCharge(Pesanan $pesanan, string $channel, ?string $note = null): array
     {
@@ -90,8 +373,9 @@ class MidtransService
             'payload_response' => [
                 'mode' => 'local_simulation',
                 'channel' => $channel,
-                'note' => $note ?? 'Simulasi Sandbox RiasKu Dual-Mode',
+                'note' => $note ?? 'Simulasi Sandbox RiasKu Dual-Mode (isi MIDTRANS_SERVER_KEY untuk mode Midtrans asli)',
             ],
+            'midtrans_mode' => 'local_simulation',
         ];
 
         switch ($channel) {
@@ -177,7 +461,7 @@ class MidtransService
                 $qrString = "00020101021226680016ID.CO.RIASKU.EWALLET01{$amount}5303360" . strtoupper(Str::random(6));
                 $result['qr_string'] = $qrString;
                 $result['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qrString);
-                $result['deeplink_url'] = "https://simulator.sandbox.midtrans.com/pay?amount={$amount}&order_id={$pesanan->order_code}";
+                $result['deeplink_url'] = "https://simulator.sandbox.midtrans.com/";
                 $result['instructions'] = [
                     "Buka aplikasi " . ucfirst($channel) . " di ponsel Anda.",
                     "Klik bayar atau scan QR Code di atas.",
@@ -190,79 +474,67 @@ class MidtransService
         return $result;
     }
 
-    private function chargeRealMidtrans(Pesanan $pesanan, string $channel): array
+    // ─────────────────────────────────────────────────────────────────
+    // HELPER: Generate Instructions per Channel
+    // ─────────────────────────────────────────────────────────────────
+
+    private function generateInstructions(string $channel, Pesanan $pesanan, array $data): array
     {
-        $auth = base64_encode($this->serverKey . ':');
-        $headers = [
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Basic ' . $auth,
-        ];
+        $amount = $pesanan->total_amount;
+        $formattedAmount = 'Rp ' . number_format($amount, 0, ',', '.');
 
-        $payload = [
-            'transaction_details' => [
-                'order_id' => $pesanan->order_code,
-                'gross_amount' => $pesanan->total_amount,
+        return match ($channel) {
+            'qris' => [
+                'Buka aplikasi e-wallet (GoPay, OVO, Dana, ShopeePay) atau mobile banking Anda.',
+                'Pilih menu Scan QR / Bayar dengan QRIS.',
+                'Arahkan kamera ke QR Code yang tampil di layar.',
+                "Periksa nama penerima dan nominal {$formattedAmount}.",
+                'Masukkan PIN Anda untuk menyelesaikan pembayaran.',
             ],
-            'customer_details' => [
-                'first_name' => $pesanan->customer_name,
-                'phone' => $pesanan->customer_phone,
+            'bca_va' => [
+                'Buka aplikasi BCA Mobile atau kunjungi ATM BCA terdekat.',
+                'Pilih menu Transfer > BCA Virtual Account.',
+                "Masukkan nomor Virtual Account: {$data['va_number']}.",
+                "Pastikan rincian tagihan sesuai: RiasKu - {$pesanan->order_code} senilai {$formattedAmount}.",
+                'Konfirmasi dan selesaikan pembayaran.',
             ],
-        ];
-
-        if ($channel === 'qris') {
-            $payload['payment_type'] = 'qris';
-            $payload['qris'] = ['acquirer' => 'gopay'];
-        } elseif (in_array($channel, ['bca_va', 'bni_va', 'bri_va', 'permata_va'])) {
-            $bank = explode('_', $channel)[0];
-            $payload['payment_type'] = 'bank_transfer';
-            $payload['bank_transfer'] = ['bank' => $bank];
-        } elseif ($channel === 'mandiri_va') {
-            $payload['payment_type'] = 'echannel';
-            $payload['echannel'] = [
-                'bill_info1' => 'Pembayaran RiasKu',
-                'bill_info2' => $pesanan->order_code,
-            ];
-        } elseif ($channel === 'gopay') {
-            $payload['payment_type'] = 'gopay';
-        } elseif ($channel === 'shopeepay') {
-            $payload['payment_type'] = 'shopeepay';
-        } else {
-            $payload['payment_type'] = 'qris';
-        }
-
-        $response = Http::withHeaders($headers)->timeout(15)->post($this->getBaseUrl() . '/charge', $payload);
-
-        if (!$response->successful()) {
-            throw new Exception('Midtrans charge failed: ' . $response->body());
-        }
-
-        $res = $response->json();
-
-        return [
-            'transaction_id' => $res['transaction_id'] ?? ('MID-' . Str::upper(Str::random(10))),
-            'payment_type' => $res['payment_type'] ?? $payload['payment_type'],
-            'bank' => $res['va_numbers'][0]['bank'] ?? null,
-            'va_number' => $res['va_numbers'][0]['va_number'] ?? ($res['permata_va_number'] ?? null),
-            'bill_key' => $res['bill_key'] ?? null,
-            'biller_code' => $res['biller_code'] ?? null,
-            'qr_string' => $res['qr_string'] ?? null,
-            'qr_url' => $res['actions'][0]['url'] ?? null,
-            'deeplink_url' => $res['actions'][1]['url'] ?? ($res['actions'][0]['url'] ?? null),
-            'gross_amount' => (int) ($res['gross_amount'] ?? $pesanan->total_amount),
-            'transaction_status' => $res['transaction_status'] ?? 'pending',
-            'expiry_time' => isset($res['expiry_time']) ? now()->parse($res['expiry_time']) : now()->addHours(24),
-            'instructions' => [
+            'bni_va' => [
+                'Buka aplikasi BNI Mobile Banking atau kunjungi ATM BNI.',
+                'Pilih menu Transfer > Virtual Account Billing.',
+                "Masukkan nomor Virtual Account: {$data['va_number']}.",
+                "Pastikan rincian tagihan sesuai senilai {$formattedAmount}.",
+                'Konfirmasi dan selesaikan pembayaran.',
+            ],
+            'bri_va' => [
+                'Buka aplikasi BRImo atau kunjungi ATM BRI.',
+                'Pilih menu Pembayaran > BRIVA.',
+                "Masukkan nomor Virtual Account: {$data['va_number']}.",
+                "Pastikan rincian tagihan sesuai senilai {$formattedAmount}.",
+                'Konfirmasi dan selesaikan pembayaran.',
+            ],
+            'mandiri_va' => [
+                "Buka aplikasi Livin' by Mandiri atau ATM Mandiri.",
+                'Pilih menu Bayar / Pembayaran > Multi Payment.',
+                "Masukkan Kode Perusahaan: {$data['biller_code']} (RiasKu).",
+                "Masukkan Nomor Pelanggan / Bill Key: {$data['bill_key']}.",
+                "Periksa nominal tagihan {$formattedAmount} dan selesaikan pembayaran.",
+            ],
+            'gopay' => [
+                'Buka aplikasi GoPay / Gojek di ponsel Anda.',
+                "Scan QR Code atau klik tombol 'Bayar via GoPay'.",
+                "Periksa total pembayaran {$formattedAmount}.",
+                'Konfirmasi pembayaran dengan PIN GoPay Anda.',
+            ],
+            'shopeepay' => [
+                'Buka aplikasi Shopee di ponsel Anda.',
+                "Scan QR Code atau klik tombol 'Bayar via ShopeePay'.",
+                "Periksa total pembayaran {$formattedAmount}.",
+                'Konfirmasi pembayaran dengan PIN ShopeePay Anda.',
+            ],
+            default => [
                 'Lakukan pembayaran sesuai petunjuk metode yang dipilih.',
-                'Periksa nomor transaksi dan nominal yang tertera.',
+                "Periksa nomor transaksi dan nominal {$formattedAmount}.",
             ],
-            'payload_response' => $res,
-        ];
-    }
-
-    public function verifySignature(string $orderId, string $statusCode, string $grossAmount, string $signatureKey): bool
-    {
-        $computed = hash('sha512', $orderId . $statusCode . $grossAmount . $this->serverKey);
-        return hash_equals($computed, $signatureKey);
+        };
     }
 }

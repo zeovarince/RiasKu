@@ -15,6 +15,14 @@ function makeCartKey(productId, variantId = null) {
 }
 
 function readSavedCart() {
+  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+  if (!token) {
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {}
+    return []
+  }
+
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
     if (!Array.isArray(saved)) return []
@@ -40,7 +48,12 @@ export const useCartStore = defineStore('cart', () => {
 
   watch(items, (value) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+      const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+      if (token && value.length > 0) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+      } else {
+        localStorage.removeItem(STORAGE_KEY)
+      }
     } catch (error) {
       console.warn('Keranjang tidak dapat disimpan pada browser ini.', error)
     }
@@ -57,6 +70,12 @@ export const useCartStore = defineStore('cart', () => {
     syncError.value = error?.message || 'Sinkronisasi keranjang ke server gagal.'
   }
 
+  /**
+   * PPL-16 & Bugfix: Sinkronisasi Pintar Dua Arah.
+   * Mencegah keranjang lokal hilang saat server mengembalikan array kosong!
+   * Jika server kosong tapi lokal punya data, unggah item lokal ke server.
+   * Jika server punya data, gabungkan (merge) dengan item lokal yang belum ada.
+   */
   async function hydrateCart() {
     if (!remoteCartEnabled()) return
     isSyncing.value = true
@@ -64,7 +83,8 @@ export const useCartStore = defineStore('cart', () => {
     try {
       const result = await getCart()
       const rows = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : []
-      items.value = rows.map((row) => {
+
+      const serverItems = rows.map((row) => {
         const product = row.product || row
         const variant = row.variant || null
         return {
@@ -78,8 +98,40 @@ export const useCartStore = defineStore('cart', () => {
           cartKey: makeCartKey(product.id, variant?.id ?? row.variant_id ?? null),
         }
       })
+
+      if (serverItems.length === 0 && items.value.length > 0) {
+        // SERVER KOSONG tapi LOKAL ADA ITEM (misal dimasukkan sebelum login)
+        // JANGAN hapus item lokal! Sinkronkan item lokal ke server backend!
+        for (const localItem of items.value) {
+          addCartItem({
+            product_id: localItem.id,
+            variant_id: localItem.variantId || null,
+            quantity: localItem.quantity,
+          }).then((res) => {
+            if (res?.id) localItem.serverCartItemId = res.id
+          }).catch(() => {})
+        }
+      } else if (serverItems.length > 0) {
+        // SERVER ADA ITEM: gabungkan (merge) dengan item lokal jika ada yang belum di server
+        const merged = [...serverItems]
+        for (const localItem of items.value) {
+          const inServer = merged.find((s) => s.cartKey === localItem.cartKey)
+          if (!inServer) {
+            merged.push(localItem)
+            addCartItem({
+              product_id: localItem.id,
+              variant_id: localItem.variantId || null,
+              quantity: localItem.quantity,
+            }).then((res) => {
+              if (res?.id) localItem.serverCartItemId = res.id
+            }).catch(() => {})
+          }
+        }
+        items.value = merged
+      }
     } catch (error) {
       setSyncError(error)
+      // Jika terjadi error jaringan / server, jangan pernah menghapus item lokal!
     } finally {
       isSyncing.value = false
     }
@@ -148,6 +200,14 @@ export const useCartStore = defineStore('cart', () => {
     if (remoteCartEnabled()) clearRemoteCart().catch(setSyncError)
   }
 
+  function resetCart() {
+    items.value = []
+    syncError.value = ''
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {}
+  }
+
   return {
     items,
     totalItems,
@@ -159,5 +219,6 @@ export const useCartStore = defineStore('cart', () => {
     updateQuantity,
     removeItem,
     clearCart,
+    resetCart,
   }
 })

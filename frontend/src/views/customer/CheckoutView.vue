@@ -17,6 +17,15 @@ const activeOrder = ref(null)
 const activePayment = ref(null)
 const showPaymentModal = ref(false)
 
+const errors = ref({
+  name: '',
+  phone: '',
+  address: '',
+  city: '',
+  district: '',
+  postalCode: '',
+})
+
 const method = ref('cod')
 const onlineChannel = ref('qris')
 
@@ -48,6 +57,70 @@ watch(() => buyer.value.city, (newCity) => {
   }
 })
 
+function validateForm() {
+  let valid = true
+  errors.value = {
+    name: '',
+    phone: '',
+    address: '',
+    city: '',
+    district: '',
+    postalCode: '',
+  }
+
+  // 1. Validasi Nama
+  const trimmedName = (buyer.value.name || '').trim()
+  if (!trimmedName) {
+    errors.value.name = 'Nama lengkap penerima wajib diisi.'
+    valid = false
+  } else if (trimmedName.length < 3) {
+    errors.value.name = 'Nama penerima minimal 3 karakter.'
+    valid = false
+  }
+
+  // 2. Validasi Nomor WhatsApp
+  const cleanPhone = (buyer.value.phone || '').trim().replace(/[\s-]/g, '')
+  if (!cleanPhone) {
+    errors.value.phone = 'Nomor WhatsApp aktif wajib diisi.'
+    valid = false
+  } else if (!/^(\+62|62|0)8[0-9]{8,12}$/.test(cleanPhone)) {
+    errors.value.phone = 'Nomor WhatsApp tidak valid (contoh: 081234567890, 10-14 digit angka).'
+    valid = false
+  }
+
+  // 3. Validasi Alamat
+  const trimmedAddress = (buyer.value.address || '').trim()
+  if (!trimmedAddress) {
+    errors.value.address = 'Alamat lengkap pengiriman wajib diisi.'
+    valid = false
+  } else if (trimmedAddress.length < 8) {
+    errors.value.address = 'Alamat terlalu singkat (sertakan nama jalan, RT/RW, dan nomor rumah).'
+    valid = false
+  }
+
+  // 4. Validasi Kota
+  if (!buyer.value.city) {
+    errors.value.city = 'Kota tujuan pengiriman wajib dipilih.'
+    valid = false
+  }
+
+  // 5. Validasi Kecamatan
+  const trimmedDistrict = (buyer.value.district || '').trim()
+  if (!trimmedDistrict) {
+    errors.value.district = 'Kecamatan tujuan pengiriman wajib diisi.'
+    valid = false
+  }
+
+  // 6. Validasi Kode Pos (opsional tapi jika diisi wajib 5 digit)
+  const trimmedPostal = (buyer.value.postalCode || '').trim()
+  if (trimmedPostal && !/^\d{5}$/.test(trimmedPostal)) {
+    errors.value.postalCode = 'Kode pos harus terdiri dari 5 digit angka.'
+    valid = false
+  }
+
+  return valid
+}
+
 async function submitCheckout() {
   if (cart.items.length === 0) {
     errorMessage.value = 'Keranjang belanja Anda masih kosong.'
@@ -57,6 +130,12 @@ async function submitCheckout() {
   // PPL-20: Validasi frontend COD Surabaya
   if (method.value === 'cod' && !isSurabaya.value) {
     errorMessage.value = 'Metode pembayaran COD hanya dapat digunakan untuk pengiriman wilayah Kota Surabaya.'
+    return
+  }
+
+  // Validasi seluruh input form
+  if (!validateForm()) {
+    errorMessage.value = 'Mohon periksa kembali formulir Anda. Masih terdapat isian yang belum sesuai.'
     return
   }
 
@@ -92,10 +171,17 @@ async function submitCheckout() {
     showPaymentModal.value = true
   } catch (err) {
     const backendMsg = err.response?.data?.message
-    const errors = err.response?.data?.errors
-    if (errors && typeof errors === 'object') {
-      const firstKey = Object.keys(errors)[0]
-      errorMessage.value = errors[firstKey][0] || backendMsg || 'Gagal memproses checkout.'
+    const backendErrors = err.response?.data?.errors
+    if (backendErrors && typeof backendErrors === 'object') {
+      if (backendErrors.customer_name) errors.value.name = backendErrors.customer_name[0]
+      if (backendErrors.customer_phone) errors.value.phone = backendErrors.customer_phone[0]
+      if (backendErrors.shipping_address) errors.value.address = backendErrors.shipping_address[0]
+      if (backendErrors.shipping_city) errors.value.city = backendErrors.shipping_city[0]
+      if (backendErrors.shipping_district) errors.value.district = backendErrors.shipping_district[0]
+      if (backendErrors.shipping_postal_code) errors.value.postalCode = backendErrors.shipping_postal_code[0]
+
+      const firstKey = Object.keys(backendErrors)[0]
+      errorMessage.value = backendErrors[firstKey][0] || backendMsg || 'Gagal memproses checkout.'
     } else {
       errorMessage.value = backendMsg || err.message || 'Terjadi kesalahan saat memproses pesanan.'
     }
@@ -124,19 +210,39 @@ async function submitCheckout() {
         <div class="form-row">
           <label class="form-group flex-1">
             <span>Nama Lengkap Penerima <span class="req">*</span></span>
-            <input v-model="buyer.name" class="form-control" placeholder="Contoh: Nadia Safitri" required />
+            <input
+              v-model="buyer.name"
+              class="form-control"
+              :class="{ 'input-error': errors.name }"
+              placeholder="Contoh: Nadia Safitri"
+              @input="errors.name = ''"
+            />
+            <span v-if="errors.name" class="field-error-text">{{ errors.name }}</span>
           </label>
 
           <label class="form-group flex-1">
             <span>Nomor WhatsApp Aktif <span class="req">*</span></span>
-            <input v-model="buyer.phone" class="form-control" type="tel" placeholder="0813xxxxxxxx" required />
+            <input
+              v-model="buyer.phone"
+              class="form-control"
+              :class="{ 'input-error': errors.phone }"
+              type="tel"
+              placeholder="0813xxxxxxxx"
+              @input="errors.phone = ''"
+            />
+            <span v-if="errors.phone" class="field-error-text">{{ errors.phone }}</span>
           </label>
         </div>
 
         <div class="form-row">
           <label class="form-group flex-1">
             <span>Kota Tujuan Pengiriman <span class="req">*</span></span>
-            <select v-model="buyer.city" class="form-control" required>
+            <select
+              v-model="buyer.city"
+              class="form-control"
+              :class="{ 'input-error': errors.city }"
+              @change="errors.city = ''"
+            >
               <option value="Kota Surabaya">Kota Surabaya (Tersedia COD)</option>
               <option value="Kabupaten Sidoarjo">Kabupaten Sidoarjo (Online Only)</option>
               <option value="Kabupaten Gresik">Kabupaten Gresik (Online Only)</option>
@@ -144,30 +250,59 @@ async function submitCheckout() {
               <option value="Kota Jakarta Selatan">DKI Jakarta (Online Only)</option>
               <option value="Kota Bandung">Kota Bandung (Online Only)</option>
             </select>
+            <span v-if="errors.city" class="field-error-text">{{ errors.city }}</span>
           </label>
 
           <label v-if="isSurabaya" class="form-group flex-1">
             <span>Kecamatan di Surabaya <span class="req">*</span></span>
-            <select v-model="buyer.district" class="form-control" required>
+            <select
+              v-model="buyer.district"
+              class="form-control"
+              :class="{ 'input-error': errors.district }"
+              @change="errors.district = ''"
+            >
               <option v-for="d in surabayaDistricts" :key="d" :value="d">{{ d }}</option>
             </select>
+            <span v-if="errors.district" class="field-error-text">{{ errors.district }}</span>
           </label>
 
           <label v-else class="form-group flex-1">
             <span>Kecamatan Tujuan <span class="req">*</span></span>
-            <input v-model="buyer.district" class="form-control" placeholder="Nama Kecamatan" required />
+            <input
+              v-model="buyer.district"
+              class="form-control"
+              :class="{ 'input-error': errors.district }"
+              placeholder="Nama Kecamatan"
+              @input="errors.district = ''"
+            />
+            <span v-if="errors.district" class="field-error-text">{{ errors.district }}</span>
           </label>
         </div>
 
         <label class="form-group">
           <span>Alamat Lengkap (Jalan, RT/RW, No. Rumah) <span class="req">*</span></span>
-          <textarea v-model="buyer.address" class="form-control" rows="2" placeholder="Jl. Manyar Kertajaya No. 45..." required></textarea>
+          <textarea
+            v-model="buyer.address"
+            class="form-control"
+            :class="{ 'input-error': errors.address }"
+            rows="2"
+            placeholder="Jl. Manyar Kertajaya No. 45..."
+            @input="errors.address = ''"
+          ></textarea>
+          <span v-if="errors.address" class="field-error-text">{{ errors.address }}</span>
         </label>
 
         <div class="form-row">
           <label class="form-group flex-1">
             <span>Kode Pos</span>
-            <input v-model="buyer.postalCode" class="form-control" placeholder="60281" />
+            <input
+              v-model="buyer.postalCode"
+              class="form-control"
+              :class="{ 'input-error': errors.postalCode }"
+              placeholder="60281"
+              @input="errors.postalCode = ''"
+            />
+            <span v-if="errors.postalCode" class="field-error-text">{{ errors.postalCode }}</span>
           </label>
 
           <label class="form-group flex-2">
@@ -325,6 +460,19 @@ async function submitCheckout() {
   font-size: 0.85rem;
   font-weight: 600;
   color: #4b303d;
+}
+.input-error {
+  border-color: #dc2626 !important;
+  background-color: #fef2f2 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15) !important;
+}
+.field-error-text {
+  display: block;
+  color: #dc2626;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
+  line-height: 1.3;
 }
 .payment-method-card {
   border: 1px solid #e6dce2;

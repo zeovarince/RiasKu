@@ -54,8 +54,13 @@ class OrderManagementController extends Controller
     public function show(int|string $id): JsonResponse
     {
         $order = Pesanan::query()
-            ->where('id', $id)
-            ->orWhere('order_code', $id)
+            ->where(function ($sub) use ($id) {
+                if (is_numeric($id)) {
+                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+                } else {
+                    $sub->where('order_code', (string) $id);
+                }
+            })
             ->with(['items.produk.primaryFoto', 'pembayarans', 'pelanggan'])
             ->firstOrFail();
 
@@ -72,8 +77,13 @@ class OrderManagementController extends Controller
         ]);
 
         $order = Pesanan::query()
-            ->where('id', $id)
-            ->orWhere('order_code', $id)
+            ->where(function ($sub) use ($id) {
+                if (is_numeric($id)) {
+                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+                } else {
+                    $sub->where('order_code', (string) $id);
+                }
+            })
             ->firstOrFail();
 
         $order->update([
@@ -93,8 +103,13 @@ class OrderManagementController extends Controller
     public function confirmCodPayment(Request $request, int|string $id): JsonResponse
     {
         $order = Pesanan::query()
-            ->where('id', $id)
-            ->orWhere('order_code', $id)
+            ->where(function ($sub) use ($id) {
+                if (is_numeric($id)) {
+                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+                } else {
+                    $sub->where('order_code', (string) $id);
+                }
+            })
             ->firstOrFail();
 
         if ($order->payment_method !== 'cod' && $order->payment_channel !== 'cash') {

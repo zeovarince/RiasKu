@@ -1,56 +1,128 @@
-# RiasKu Frontend API Contract (Draft)
+# RiasKu API Contract & Integration Reference
 
-Frontend saat ini menggunakan mock data dengan `VITE_USE_MOCK_DATA=true` agar halaman dapat dikembangkan sebelum Laravel API tersedia.
+Dokumen ini memuat kontrak resmi integrasi Backend API Laravel (`backend-api/`) dan Frontend Vue 3 (`frontend/`) untuk modul Katalog, Keranjang, Checkout, Pembayaran Midtrans Real-time (PPL-19), dan COD Khusus Kota Surabaya (PPL-20).
 
-Ketika backend siap, ubah `VITE_USE_MOCK_DATA=false` pada `frontend/.env` dan implementasikan endpoint berikut di Laravel.
+---
 
-| Method | Endpoint | Penggunaan |
-|---|---|---|
-| GET | `/api/categories` | Mengambil kategori pada homepage |
-| GET | `/api/products?featured=1&per_page=4` | Mengambil produk best seller |
-| GET | `/api/products` | Katalog dan pencarian produk |
-| GET | `/api/products/{id}` | Detail produk |
-| POST | `/api/auth/login` | Login pelanggan/admin |
-| POST | `/api/auth/register` | Registrasi pelanggan |
-| POST | `/api/auth/logout` | Logout |
-| POST | `/api/orders` | Membuat pesanan/checkout |
-| GET | `/api/orders/{orderCode}` | Melihat status pesanan |
-| POST | `/api/orders/{orderId}/payments` | Membuat instruksi pembayaran online |
-| POST | `/api/bookings` | Permintaan konsultasi/reservasi |
+## 1. Daftar Endpoint API
 
-## Bentuk response yang disarankan
+### A. Autentikasi & Pelanggan
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| POST | `/api/auth/register` | Public | Registrasi akun pelanggan baru |
+| POST | `/api/auth/login` | Public | Login pelanggan (email/username & password) |
+| POST | `/api/auth/google` | Public | Login via Google One Tap / OAuth |
+| GET | `/api/auth/me` | Bearer Token | Data profil pelanggan yang sedang login |
+| POST | `/api/auth/logout` | Bearer Token | Menghapus token autentikasi pelanggan |
 
-Gunakan format konsisten:
+### B. Katalog & Keranjang Belanja
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| GET | `/api/categories` / `/api/kategori` | Public | Daftar kategori produk |
+| GET | `/api/products` / `/api/produk` | Public | Katalog produk (filter search, category, sort) |
+| GET | `/api/products/{id}` / `/api/produk/{id}` | Public | Detail produk & daftar varian aktif |
+| GET | `/api/cart` | Bearer Token | Daftar item dalam keranjang belanja pelanggan |
+| POST | `/api/cart/items` | Bearer Token | Menambahkan produk & varian ke keranjang |
+| PATCH | `/api/cart/items/{id}` | Bearer Token | Mengubah kuantitas item keranjang |
+| DELETE | `/api/cart/items/{id}` | Bearer Token | Menghapus item tertentu dari keranjang |
+| DELETE | `/api/cart` | Bearer Token | Mengosongkan keranjang belanja |
+
+### C. Pesanan & Checkout (PPL-19 & PPL-20)
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| POST | `/api/orders` / `/api/checkout` | Bearer Token | Membuat pesanan baru, validasi stok atomik (`DB::transaction`), inisiasi pembayaran |
+| GET | `/api/orders` | Bearer Token | Daftar riwayat pesanan milik pelanggan |
+| GET | `/api/orders/{id}` | Bearer Token | Detail lengkap pesanan pelanggan |
+| GET | `/api/orders/{orderCode}/track` | Public | Pelacakan pesanan publik untuk pembeli/tamu |
+
+### D. Pembayaran Midtrans Sandbox & Simulator (PPL-19)
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| POST | `/api/orders/{id}/payments` | Bearer Token | Membuat ulang / mengambil instruksi pembayaran aktif |
+| GET | `/api/payments/{id}` | Bearer Token | Detail pembayaran (status, nomor VA, payload QRIS) |
+| POST | `/api/payments/{orderNumber}/sync-status` | Bearer Token / Public | **Live Sync Real-time**: memanggil `GET Midtrans /v2/{order_id}/status`, sinkronkan status ke DB lokal |
+| POST | `/api/payments/{id}/simulate-pay` | Bearer Token | Simulator pelunasan instan offline/lokal |
+| POST | `/api/payments/midtrans/webhook` | Public | Webhook resmi notifikasi Midtrans (verifikasi signature SHA512) |
+| POST | `/api/payments/midtrans-notification` | Public | Alias kompatibilitas webhook notifikasi Midtrans |
+
+### E. Manajemen Pesanan Admin (PPL-20 COD)
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| GET | `/api/admin/orders` | Admin Token | Daftar seluruh pesanan toko (filter status, search, paginasi) |
+| GET | `/api/admin/orders/{id}` | Admin Token | Detail pesanan dan info pembayaran |
+| PATCH | `/api/admin/orders/{id}/status` | Admin Token | Mengubah status pesanan (`menunggu_pembayaran`, `diproses`, `dikirim`, `selesai`, `dibatalkan`) |
+| POST | `/api/admin/orders/{id}/confirm-cod-payment` | Admin Token | **PPL-20**: Konfirmasi "Uang Tunai Diterima" dari kurir COD Surabaya |
+
+---
+
+## 2. Struktur Payload Checkout (`POST /api/orders`)
 
 ```json
 {
-  "data": [],
-  "message": "OK"
+  "customer_name": "Nadia Safitri",
+  "customer_phone": "081398765432",
+  "shipping_address": "Jl. Manyar Kertajaya No. 45",
+  "shipping_city": "Kota Surabaya",
+  "shipping_district": "Gubeng",
+  "shipping_postal_code": "60281",
+  "payment_method": "online",
+  "payment_channel": "qris",
+  "notes": "Titipkan satpam jika rumah kosong",
+  "items": [
+    {
+      "produk_id": 1,
+      "produk_varian_id": 2,
+      "quantity": 1
+    }
+  ]
 }
 ```
 
-Produk minimal memuat:
+### Aturan Validasi Khusus:
+1. **COD Surabaya (PPL-20)**:
+   - Jika `payment_method: "cod"`, `shipping_city` **wajib** memuat kata `"surabaya"` (case-insensitive).
+   - Jika di luar Surabaya, server mengembalikan **HTTP 422 Unprocessable Entity**:
+     ```json
+     {
+       "message": "Metode pembayaran COD hanya tersedia untuk pengiriman wilayah Kota Surabaya.",
+       "errors": {
+         "shipping_city": ["Wilayah ini di luar jangkauan layanan COD Surabaya. Silakan gunakan Pembayaran Online."]
+       }
+     }
+     ```
+   - Status pesanan COD langsung berstatus `order_status: "diproses"` dan `payment_status: "menunggu_pembayaran_cod"`.
+2. **Pembayaran Online Midtrans (PPL-19)**:
+   - Channel yang didukung: `qris`, `bca_va`, `bni_va`, `bri_va`, `mandiri_va`, `gopay`, `shopeepay`.
+   - Menghasilkan nomor VA asli atau QRIS URL dari Midtrans Core API `/v2/charge`.
+   - Status awal: `order_status: "menunggu_pembayaran"`, `payment_status: "menunggu_pembayaran"`.
 
-```json
-{
-  "id": 1,
-  "code": "RSK-CUSH-01",
-  "name": "Velvet Matte Cushion SPF 35",
-  "price": 185000,
-  "image_url": null,
-  "category": "complexion",
-  "rating": 4.9,
-  "review_count": 184,
-  "stock": 10,
-  "is_featured": true
-}
+---
+
+## 3. Alur Sinkronisasi Real-Time Midtrans (PPL-19)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer as Pelanggan (Vue Frontend)
+    participant Backend as Backend API (Laravel)
+    participant Midtrans as Midtrans Sandbox
+    actor Admin as Admin RiasKu
+
+    Customer->>Backend: POST /api/orders (Checkout Online)
+    Backend->>Midtrans: POST /v2/charge (Core API)
+    Midtrans-->>Backend: Response (QR URL / VA Number / Expiry)
+    Backend-->>Customer: Return payment details & open modal
+    
+    par Auto-Polling Real-time (tiap 5s)
+        Customer->>Backend: POST /api/payments/{orderCode}/sync-status
+        Backend->>Midtrans: GET /v2/{orderCode}/status
+        Midtrans-->>Backend: Status (settlement / pending)
+        Backend-->>Customer: Return status terupdate (settlement -> paid)
+    and Pembayaran di Midtrans Simulator
+        Customer->>Midtrans: Bayar via Midtrans Simulator
+        Midtrans->>Backend: POST /api/payments/midtrans/webhook (Signature Verified)
+        Backend->>Backend: Update status = settlement/dibayar
+    end
+
+    Customer->>Customer: Tampilkan banner "Pembayaran Berhasil!"
 ```
-
-## Catatan integrasi
-
-- Base URL API pelanggan: `http://localhost:8000/api`; API panel admin: `http://localhost:8000/api/admin` (keduanya dari backend `backend-api/`).
-- Endpoint di atas adalah kontrak awal untuk disepakati dengan tim backend, bukan klaim bahwa endpoint tersebut sudah tersedia.
-- Jangan menyimpan secret/payment private key pada `VITE_*`; variabel Vite terekspos ke browser.
-- Jika API memakai Laravel Sanctum, sepakati strategi cookie/CSRF dengan backend. Jika memakai bearer token, jangan menyimpan token sensitif di localStorage tanpa pertimbangan keamanan.
-- Untuk development lokal lintas origin, backend perlu mengatur CORS agar mengizinkan origin frontend, misalnya `http://localhost:5173` (pelanggan) dan `http://localhost:5174` (panel admin).
-- Saat menjalankan via Docker Compose, browser tetap menggunakan `http://localhost:8000/api`, sedangkan koneksi antarkontainer memakai nama service Docker.

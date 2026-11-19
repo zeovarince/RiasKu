@@ -1,10 +1,16 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 import { useCartStore } from '@/stores/cart'
+import { useAuthStore } from '@/stores/auth'
 import { formatRupiah } from '@/utils/currency'
 
 const cart = useCartStore()
+const auth = useAuthStore()
+
+const isCustomer = computed(() => {
+  return auth.isAuthenticated && auth.user?.account_type === 'pelanggan'
+})
 
 onMounted(() => cart.hydrateCart())
 </script>
@@ -58,8 +64,26 @@ onMounted(() => cart.hydrateCart())
         <div class="summary-line"><span>Subtotal produk</span><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
         <div class="summary-line"><span>Pengiriman</span><span>Dihitung saat checkout</span></div>
         <div class="summary-line summary-total"><strong>Total sementara</strong><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
-        <RouterLink to="/checkout" class="button button-primary cart-checkout-button">Lanjut ke Checkout →</RouterLink>
-        <p class="cart-cod-note">COD tersedia untuk area Surabaya. Metode pengiriman dan biaya akhir akan dikonfirmasi pada tahap checkout.</p>
+        <RouterLink
+          v-if="isCustomer"
+          to="/checkout"
+          class="button button-primary cart-checkout-button"
+        >
+          Lanjut ke Checkout &amp; COD →
+        </RouterLink>
+        <RouterLink
+          v-else
+          to="/auth/login?redirect=/checkout"
+          class="button button-primary cart-checkout-button"
+        >
+          Masuk untuk Checkout &amp; COD →
+        </RouterLink>
+        <p v-if="!isCustomer" class="cart-guest-note">
+          🔒 Masuk atau daftar akun terlebih dahulu untuk melanjutkan ke tahap checkout dan pembayaran COD Surabaya.
+        </p>
+        <p v-else class="cart-cod-note">
+          COD tersedia khusus wilayah Kota Surabaya. Metode pembayaran online (QRIS, VA, E-Wallet) tersedia untuk seluruh Indonesia.
+        </p>
       </aside>
     </div>
 
@@ -73,3 +97,16 @@ onMounted(() => cart.hydrateCart())
     </div>
   </section>
 </template>
+
+<style scoped>
+.cart-guest-note {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #9d174d;
+  background: #fdf2f8;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px dashed #f472b6;
+  line-height: 1.45;
+}
+</style>

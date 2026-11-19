@@ -9,7 +9,9 @@ use App\Models\Pembayaran;
 use App\Models\Pesanan;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
+use App\Services\MidtransService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -277,4 +279,351 @@ test('Public user can track order by order code', function () {
             'shipping_city' => 'Kota Surabaya',
             'payment_channel' => 'qris',
         ]);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// TEST BARU: Midtrans Core API Integration (HTTP Fake)
+// ═══════════════════════════════════════════════════════════════════
+
+test('PPL-19 Midtrans: Real charge QRIS via Midtrans Core API with HTTP fake', function () {
+    // Set env keys agar MidtransService masuk mode real
+    config(['services.midtrans.server_key' => 'SB-Mid-server-TEST123']);
+    config(['services.midtrans.client_key' => 'SB-Mid-client-TEST123']);
+    config(['services.midtrans.base_url' => 'https://api.sandbox.midtrans.com']);
+
+    // Fake response Midtrans Core API /v2/charge untuk QRIS
+    Http::fake([
+        'api.sandbox.midtrans.com/v2/charge' => Http::response([
+            'status_code' => '201',
+            'status_message' => 'Success, QRIS transaction is created',
+            'transaction_id' => 'MIDTRANS-TRX-QRIS-001',
+            'order_id' => 'RSK-20261119-ABCDE',
+            'gross_amount' => '185000.00',
+            'payment_type' => 'qris',
+            'transaction_status' => 'pending',
+            'transaction_time' => '2026-11-19 10:00:00',
+            'expiry_time' => '2026-11-19 10:15:00',
+            'qr_string' => '00020101021226680016COM.GO-JEK.WWW0218ID1021800000013900208RIASKU01',
+            'acquirer' => 'gopay',
+            'actions' => [
+                [
+                    'name' => 'generate-qr-code',
+                    'method' => 'GET',
+                    'url' => 'https://api.sandbox.midtrans.com/v2/gopay/MIDTRANS-TRX-QRIS-001/qr-code',
+                ],
+            ],
+        ], 201),
+    ]);
+
+    Sanctum::actingAs($this->pelanggan);
+
+    // Rebind MidtransService agar baca config baru
+    app()->forgetInstance(MidtransService::class);
+
+    $response = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Midtrans QRIS',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Test QRIS No. 1',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(201);
+    expect($response->json('data.payment.transaction_id'))->toBe('MIDTRANS-TRX-QRIS-001');
+    expect($response->json('data.payment.payment_type'))->toBe('qris');
+    expect($response->json('data.payment.qr_string'))->toContain('COM.GO-JEK');
+    expect($response->json('data.payment.qr_url'))->toContain('qr-code');
+
+    // Verify HTTP request was sent to Midtrans
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), 'api.sandbox.midtrans.com/v2/charge')
+            && $request['payment_type'] === 'qris';
+    });
+});
+
+test('PPL-19 Midtrans: Real charge BCA VA via Midtrans Core API with HTTP fake', function () {
+    config(['services.midtrans.server_key' => 'SB-Mid-server-TEST123']);
+    config(['services.midtrans.base_url' => 'https://api.sandbox.midtrans.com']);
+
+    Http::fake([
+        'api.sandbox.midtrans.com/v2/charge' => Http::response([
+            'status_code' => '201',
+            'status_message' => 'Success, Bank Transfer transaction is created',
+            'transaction_id' => 'MIDTRANS-TRX-BCA-001',
+            'order_id' => 'RSK-20261119-BCAVA',
+            'gross_amount' => '185000.00',
+            'payment_type' => 'bank_transfer',
+            'transaction_status' => 'pending',
+            'expiry_time' => '2026-11-20 10:00:00',
+            'va_numbers' => [
+                ['bank' => 'bca', 'va_number' => '12890081234567890'],
+            ],
+        ], 201),
+    ]);
+
+    Sanctum::actingAs($this->pelanggan);
+    app()->forgetInstance(MidtransService::class);
+
+    $response = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Midtrans BCA',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Test BCA No. 2',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'bca_va',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(201);
+    expect($response->json('data.payment.transaction_id'))->toBe('MIDTRANS-TRX-BCA-001');
+    expect($response->json('data.payment.payment_type'))->toBe('bank_transfer');
+    expect($response->json('data.payment.bank'))->toBe('bca');
+    expect($response->json('data.payment.va_number'))->toBe('12890081234567890');
+});
+
+test('PPL-19 Midtrans: Webhook verifies signature and updates status to settlement', function () {
+    config(['services.midtrans.server_key' => 'SB-Mid-server-TEST123']);
+
+    // Buat pesanan dulu via simulasi lokal
+    Sanctum::actingAs($this->pelanggan);
+    $orderResponse = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Webhook User',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Webhook No. 3',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'bca_va',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $orderCode = $orderResponse->json('data.order.order_code');
+    $orderId = $orderResponse->json('data.order.id');
+
+    // Hitung signature key yang valid
+    $statusCode = '200';
+    $grossAmount = '185000.00';
+    $serverKey = 'SB-Mid-server-TEST123';
+    $validSignature = hash('sha512', $orderCode . $statusCode . $grossAmount . $serverKey);
+
+    // Rebind agar verifySignature gunakan key baru
+    app()->forgetInstance(MidtransService::class);
+
+    // Kirim webhook settlement dengan signature valid
+    $webhookResponse = $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => $statusCode,
+        'gross_amount' => $grossAmount,
+        'signature_key' => $validSignature,
+        'transaction_status' => 'settlement',
+        'transaction_id' => 'MIDTRANS-TRX-WEBHOOK-001',
+        'payment_type' => 'bank_transfer',
+    ]);
+
+    $webhookResponse->assertStatus(200);
+
+    // Verifikasi database diupdate
+    $order = Pesanan::find($orderId);
+    expect($order->payment_status)->toBe('dibayar');
+    expect($order->order_status)->toBe('diproses');
+
+    $payment = Pembayaran::where('pesanan_id', $orderId)->latest()->first();
+    expect($payment->transaction_status)->toBe('settlement');
+    expect($payment->paid_at)->not->toBeNull();
+});
+
+test('PPL-19 Midtrans: Webhook rejects invalid signature with 403', function () {
+    config(['services.midtrans.server_key' => 'SB-Mid-server-TEST123']);
+
+    Sanctum::actingAs($this->pelanggan);
+    $orderResponse = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Sig Fail',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Invalid Sig No. 4',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $orderCode = $orderResponse->json('data.order.order_code');
+    app()->forgetInstance(MidtransService::class);
+
+    // Kirim webhook dengan signature PALSU
+    $webhookResponse = $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '200',
+        'gross_amount' => '185000.00',
+        'signature_key' => 'fake_invalid_signature_hash',
+        'transaction_status' => 'settlement',
+    ]);
+
+    $webhookResponse->assertStatus(403);
+});
+
+test('PPL-19 Midtrans: Sync status endpoint works in simulation mode', function () {
+    Sanctum::actingAs($this->pelanggan);
+
+    $orderResponse = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Sync',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Sync Test No. 5',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $orderCode = $orderResponse->json('data.order.order_code');
+
+    // Sync status saat mode simulasi lokal (server key kosong)
+    $syncResponse = $this->postJson("/api/payments/{$orderCode}/sync-status");
+    $syncResponse->assertStatus(200);
+    expect($syncResponse->json('data.synced'))->toBeFalse();
+    expect($syncResponse->json('data.midtrans_mode'))->toBe('local_simulation');
+});
+
+test('PPL-19 Midtrans: Sync status endpoint detects settlement from Midtrans', function () {
+    config(['services.midtrans.server_key' => 'SB-Mid-server-TEST123']);
+    config(['services.midtrans.base_url' => 'https://api.sandbox.midtrans.com']);
+
+    Sanctum::actingAs($this->pelanggan);
+    app()->forgetInstance(MidtransService::class);
+
+    $orderResponse = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Sync Real',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Sync Real No. 6',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'bca_va',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $orderCode = $orderResponse->json('data.order.order_code');
+    $orderId = $orderResponse->json('data.order.id');
+
+    // Fake Midtrans GET status endpoint → settlement
+    Http::fake([
+        "api.sandbox.midtrans.com/v2/{$orderCode}/status" => Http::response([
+            'transaction_status' => 'settlement',
+            'status_code' => '200',
+            'gross_amount' => '185000.00',
+            'order_id' => $orderCode,
+            'payment_type' => 'bank_transfer',
+            'transaction_id' => 'MIDTRANS-TRX-SYNC-001',
+        ], 200),
+    ]);
+
+    app()->forgetInstance(MidtransService::class);
+
+    $syncResponse = $this->postJson("/api/payments/{$orderCode}/sync-status");
+    $syncResponse->assertStatus(200);
+    expect($syncResponse->json('data.synced'))->toBeTrue();
+    expect($syncResponse->json('data.midtrans_status'))->toBe('settlement');
+
+    // Verifikasi database diupdate
+    $order = Pesanan::find($orderId);
+    expect($order->payment_status)->toBe('dibayar');
+    expect($order->order_status)->toBe('diproses');
+});
+
+test('PPL-19: Webhook restores stock on expire/cancel/deny', function () {
+    Sanctum::actingAs($this->pelanggan);
+
+    $orderResponse = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Stok Expire',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Expire No. 7',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 3,
+            ],
+        ],
+    ]);
+
+    $orderCode = $orderResponse->json('data.order.order_code');
+
+    // Stok awal 10, dibeli 3, sisa harus 7
+    $this->varian->refresh();
+    expect($this->varian->stock)->toBe(7);
+
+    // Kirim webhook expire (tanpa verifikasi signature karena server key kosong)
+    $webhookResponse = $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '407',
+        'gross_amount' => '555000.00',
+        'signature_key' => '',
+        'transaction_status' => 'expire',
+    ]);
+
+    $webhookResponse->assertStatus(200);
+
+    // Stok harus kembali ke 10
+    $this->varian->refresh();
+    expect($this->varian->stock)->toBe(10);
+});
+
+test('PPL-19: Checkout rejected when stock insufficient', function () {
+    Sanctum::actingAs($this->pelanggan);
+
+    $response = $this->postJson('/api/orders', [
+        'customer_name' => 'Test Stok Habis',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Stok Habis No. 8',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 999, // Melebihi stok
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(422);
 });

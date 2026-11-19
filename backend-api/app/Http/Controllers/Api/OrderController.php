@@ -215,8 +215,11 @@ class OrderController extends Controller
         $order = Pesanan::query()
             ->where('pelanggan_id', $request->user()->id)
             ->where(function ($sub) use ($id) {
-                $sub->where('id', $id)
-                    ->orWhere('order_code', $id);
+                if (is_numeric($id)) {
+                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+                } else {
+                    $sub->where('order_code', (string) $id);
+                }
             })
             ->with(['items.produk', 'latestPembayaran'])
             ->first();

@@ -33,9 +33,13 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
-// Public Tracking & Payment Webhook (PPL-19, PPL-20)
+// Public Tracking & Payment Webhooks (PPL-19, PPL-20)
 Route::get('/orders/{orderCode}/track', [OrderController::class, 'track']);
-Route::post('/payments/midtrans-notification', [PaymentController::class, 'midtransNotification']);
+
+// Midtrans Webhook (URL resmi: POST /api/payments/midtrans/webhook)
+Route::post('/payments/midtrans/webhook', [PaymentController::class, 'midtransWebhook']);
+// Alias backward-compat untuk webhook lama
+Route::post('/payments/midtrans-notification', [PaymentController::class, 'midtransWebhook']);
 
 Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
     // Orders & Checkout (PPL-19, PPL-20)
@@ -50,9 +54,10 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);
 
-    // Payments & Local Simulator (PPL-19)
+    // Payments & Realtime Sync (PPL-19)
     Route::get('/payments/{id}', [PaymentController::class, 'status']);
     Route::post('/payments/{id}/simulate-pay', [PaymentController::class, 'simulateSuccess']);
+    Route::post('/payments/{orderNumber}/sync-status', [PaymentController::class, 'syncStatus']);
 
     // Remote Cart Endpoints (PPL-16)
     Route::get('/cart', [CartController::class, 'index']);
