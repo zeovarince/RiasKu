@@ -640,4 +640,17 @@ async function submitCheckout() {
   font-size: 0.7rem;
   color: #7d6b75;
 }
+
+@media (max-width: 680px) {
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
+  .payment-method-card {
+    padding: 0.85rem;
+  }
+  .channel-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
 </style>

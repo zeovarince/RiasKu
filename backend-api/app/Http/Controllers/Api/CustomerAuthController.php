@@ -14,14 +14,21 @@ class CustomerAuthController extends Controller
 {
     public function register(Request $request): JsonResponse
     {
-        $data = $request->validate([
+        $rules = [
             'username' => ['required', 'string', 'min:2', 'max:80', 'unique:pelanggan,username'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:pelanggan,email'],
             'password' => ['required', 'string', 'min:8', 'max:255'],
-        ], [
+        ];
+
+        if ($request->has('password_confirmation') || $request->filled('password_confirmation')) {
+            $rules['password'][] = 'confirmed';
+        }
+
+        $data = $request->validate($rules, [
             'username.unique' => 'Username sudah digunakan.',
             'email.unique' => 'Email sudah terdaftar.',
             'password.min' => 'Kata sandi minimal 8 karakter.',
+            'password.confirmed' => 'Konfirmasi kata sandi tidak cocok.',
         ]);
 
         $customer = Pelanggan::create([
@@ -44,7 +51,31 @@ class CustomerAuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $customer = Pelanggan::where('email', Str::lower(trim($data['email'])))->first();
+        $email = Str::lower(trim($data['email']));
+        $customer = Pelanggan::where('email', $email)->first();
+
+        // Jika email bukan pelanggan, periksa apakah akun terdaftar sebagai Admin
+        if (! $customer) {
+            $admin = \App\Models\Admin::where('email', $email)->first();
+            if ($admin && Hash::check($data['password'], $admin->password_hash)) {
+                if (! $admin->is_active) {
+                    return response()->json(['message' => 'Akun admin dinonaktifkan.'], 403);
+                }
+
+                return response()->json([
+                    'data' => [
+                        'token' => $admin->createToken('riasku-dashboard')->plainTextToken,
+                        'user' => [
+                            'id' => $admin->id,
+                            'name' => $admin->name,
+                            'username' => $admin->name,
+                            'email' => $admin->email,
+                            'account_type' => 'admin',
+                        ],
+                    ],
+                ]);
+            }
+        }
 
         if ($customer && $customer->password_hash === null) {
             return response()->json(['message' => 'Akun ini menggunakan Google. Pilih tombol Masuk dengan Google.'], 422);

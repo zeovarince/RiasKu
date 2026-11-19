@@ -73,6 +73,24 @@ it('uses the same message for unknown email and incorrect password', function ()
         ->assertUnauthorized()->assertJsonPath('message', 'email atau password salah');
 });
 
+it('allows admin to log in via public auth login and returns admin account type', function (): void {
+    Admin::create([
+        'name' => 'Admin RiasKu',
+        'email' => 'admin@riasku.com',
+        'password_hash' => Hash::make('password123'),
+        'is_active' => true,
+    ]);
+
+    $response = $this->postJson('/api/auth/login', [
+        'email' => 'admin@riasku.com',
+        'password' => 'password123',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.user.account_type', 'admin')
+        ->assertJsonPath('data.user.email', 'admin@riasku.com');
+});
+
 it('blocks inactive customers and guides passwordless customers to Google', function (): void {
     Pelanggan::create([
         'username' => 'inactive_user',

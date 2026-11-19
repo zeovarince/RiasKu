@@ -716,4 +716,25 @@ watch(() => route.query.code, (newCode) => {
   margin-top: 1.5rem;
   text-align: center;
 }
+
+@media (max-width: 640px) {
+  .tracking-steps {
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+  .step-divider {
+    display: none;
+  }
+  .info-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem;
+  }
+  .order-track-box {
+    flex-direction: column;
+  }
+  .track-search-btn {
+    width: 100%;
+  }
+}
 </style>

@@ -35,7 +35,12 @@ async function completeLogin(request) {
   errorMessage.value = ''
   fieldErrors.value = {}
   try {
-    auth.setSession(await request())
+    const session = await request()
+    auth.setSession(session)
+    if (session.user?.account_type === 'admin') {
+      await router.replace('/admin/dashboard')
+      return
+    }
     await cart.hydrateCart().catch(() => {})
     await router.replace(destination())
   } catch (error) {
