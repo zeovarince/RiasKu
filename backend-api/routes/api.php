@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
+use App\Http\Controllers\Api\ShippingController;
 use App\Http\Middleware\EnsurePelanggan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +29,8 @@ Route::get('/produk', [ProdukController::class, 'index']);
 Route::get('/products/{id}', [ProdukController::class, 'show']);
 Route::get('/produk/{id}', [ProdukController::class, 'show']);
 
+Route::get('/shipping/zones', [ShippingController::class, 'zones'])->middleware('throttle:60,1');
+
 // Protected Customer Routes
 Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
     Route::get('/me', [CustomerAuthController::class, 'me']);
@@ -42,14 +46,17 @@ Route::post('/payments/midtrans/webhook', [PaymentController::class, 'midtransWe
 Route::post('/payments/midtrans-notification', [PaymentController::class, 'midtransWebhook']);
 
 Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
-    // Orders & Checkout (PPL-19, PPL-20)
+    // Shipping Rates (PPL-17, PPL-18)
+    Route::post('/shipping/rates', [ShippingController::class, 'rates']);
+
+    // Orders & Checkout (PPL-17, 18, 19, 20)
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
-    Route::post('/checkout', function (Request $request) {
-        if ($request->has('customer_name')) {
-            return app(OrderController::class)->store($request);
+    Route::post('/checkout', function (Request $request, \App\Services\ShippingCostService $shipping) {
+        if ($request->has('destination_zone_id')) {
+            return app(CheckoutController::class)->store($request, $shipping);
         }
-        return response()->json(['message' => 'Checkout berhasil', 'data' => []]);
+        return app(OrderController::class)->store($request);
     });
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);

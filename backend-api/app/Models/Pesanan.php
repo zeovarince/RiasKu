@@ -16,8 +16,10 @@ class Pesanan extends Model
     protected $table = 'pesanan';
 
     protected $fillable = [
-        'pelanggan_id',
         'order_code',
+        'pelanggan_id',
+        'recipient_name',
+        'recipient_phone',
         'customer_name',
         'customer_phone',
         'shipping_address',
@@ -26,19 +28,36 @@ class Pesanan extends Model
         'shipping_postal_code',
         'shipping_courier',
         'shipping_cost',
+        'subtotal',
         'total_product_amount',
+        'total',
         'total_amount',
         'payment_method',
         'payment_channel',
         'payment_status',
+        'status',
         'order_status',
+        'shipping_zone_id',
+        'destination_province',
+        'destination_city',
+        'destination_district',
+        'destination_postal_code',
+        'courier',
+        'courier_service',
+        'shipping_etd',
+        'weight_grams',
+        'tracking_number',
         'notes',
     ];
 
     protected $casts = [
+        'subtotal' => 'integer',
         'shipping_cost' => 'integer',
+        'total' => 'integer',
         'total_product_amount' => 'integer',
         'total_amount' => 'integer',
+        'shipping_zone_id' => 'integer',
+        'weight_grams' => 'integer',
     ];
 
     protected $appends = [
@@ -67,6 +86,11 @@ class Pesanan extends Model
         return $this->hasMany(PesananItem::class, 'pesanan_id');
     }
 
+    public function zona(): BelongsTo
+    {
+        return $this->belongsTo(ZonaPengiriman::class, 'shipping_zone_id');
+    }
+
     public function pembayarans(): HasMany
     {
         return $this->hasMany(Pembayaran::class, 'pesanan_id');
@@ -88,6 +112,7 @@ class Pesanan extends Model
 
     public function getFormattedTotalAttribute(): string
     {
-        return 'Rp ' . number_format($this->total_amount, 0, ',', '.');
+        $amount = $this->total_amount ?? $this->total ?? 0;
+        return 'Rp ' . number_format($amount, 0, ',', '.');
     }
 }

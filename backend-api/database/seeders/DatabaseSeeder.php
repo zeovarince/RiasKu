@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             AdminSeeder::class,
             PelangganSeeder::class,
             KatalogSeeder::class,
+            ShippingSeeder::class,
         ]);
     }
 }
