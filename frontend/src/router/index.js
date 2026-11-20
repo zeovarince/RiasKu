@@ -10,7 +10,7 @@ const routes = [
       { path: 'products/:id', name: 'product-detail', component: () => import('@/views/customer/ProductDetailView.vue') },
       { path: 'cart', name: 'cart', component: () => import('@/views/customer/CartView.vue') },
       { path: 'checkout', name: 'checkout', component: () => import('@/views/customer/CheckoutView.vue'), meta: { requiresCustomer: true } },
-      { path: 'orders/track', name: 'order-track', component: () => import('@/views/customer/OrderStatusView.vue') },
+      { path: 'orders/track', name: 'order-track', component: () => import('@/views/customer/OrderStatusView.vue'), meta: { requiresCustomer: true } },
       { path: 'consultation', name: 'consultation', component: () => import('@/views/customer/ConsultationView.vue') },
       { path: 'ai-assistant', name: 'ai-assistant', component: () => import('@/views/customer/AiAssistantView.vue') },
     ],

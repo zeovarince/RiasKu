@@ -27,7 +27,13 @@ export function normalizeProduct(product) {
   const isPreorder = Boolean(product.is_preorder ?? product.bisa_preorder)
   const preorderEstimateDays = product.preorder_estimate_days ?? null
 
-  const rawVariants = Array.isArray(product.variants) ? product.variants : (Array.isArray(product.varians) ? product.varians : [])
+  const rawVariants = Array.isArray(product.variants)
+    ? product.variants
+    : Array.isArray(product.varians)
+      ? product.varians
+      : Array.isArray(product.active_varians)
+        ? product.active_varians
+        : []
   const variants = rawVariants.map((variant) => ({
     ...variant,
     name: variant.name ?? variant.nama ?? 'Standar',

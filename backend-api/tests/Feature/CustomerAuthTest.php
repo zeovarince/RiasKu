@@ -202,5 +202,5 @@ it('requires authentication for customer functions and only permits customer tok
     ]);
     $customerToken = $pelanggan->createToken('customer-token')->plainTextToken;
     $this->withToken($customerToken)->getJson('/api/orders')->assertOk();
-    $this->withToken($customerToken)->postJson('/api/checkout')->assertOk();
+    $this->withToken($customerToken)->postJson('/api/checkout')->assertUnprocessable();
 });
