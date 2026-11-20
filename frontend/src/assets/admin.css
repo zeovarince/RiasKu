@@ -43,7 +43,22 @@
 .admin-store-link { margin-bottom: 9px; border: 1px solid #ffffff55; }
 .admin-profile { width: 31px; height: 31px; display: grid; place-items: center; border: 2px solid #f6d6a8; border-radius: 50%; color: #7e364f; background: #fff9f7; font-size: 9px; font-weight: 800; }
 .admin-main-column { min-width: 0; }
-.admin-topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 clamp(20px,3.2vw,48px); border-bottom: 1px solid var(--admin-line); background: #fffdfc; }
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 0 clamp(20px,3.2vw,48px);
+  border-bottom: 1px solid var(--admin-line);
+  background: rgba(255, 253, 252, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 6px rgba(74, 44, 53, 0.04);
+}
 .admin-breadcrumb { display: flex; align-items: center; gap: 10px; color: #a18e92; font-size: 11px; }
 .admin-breadcrumb b { color: #d9c3c8; font-weight: 400; }
 .admin-breadcrumb strong { color: #68444f; font-weight: 700; }

@@ -13,20 +13,24 @@ class PesananItem extends Model
     protected $table = 'pesanan_item';
 
     protected $fillable = [
+        'pesanan_id',
         'produk_id',
         'produk_varian_id',
         'product_name',
         'variant_name',
         'sku',
+        'product_sku',
         'unit_price',
         'quantity',
         'line_total',
+        'subtotal',
     ];
 
     protected $casts = [
         'unit_price' => 'integer',
         'quantity' => 'integer',
         'line_total' => 'integer',
+        'subtotal' => 'integer',
     ];
 
     public function pesanan(): BelongsTo

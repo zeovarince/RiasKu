@@ -10,22 +10,19 @@ class AdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $email = config('services.riasku_admin.email');
-        $password = config('services.riasku_admin.password');
-
-        if (! $email || ! $password) {
-            $this->command?->warn('AdminSeeder dilewati: atur RIASKU_ADMIN_EMAIL dan RIASKU_ADMIN_PASSWORD di .env lokal.');
-
-            return;
-        }
+        $email = config('services.riasku_admin.email') ?: 'admin@riasku.com';
+        $password = config('services.riasku_admin.password') ?: 'password123';
+        $name = config('services.riasku_admin.name') ?: 'Admin RiasKu';
 
         Admin::updateOrCreate(
             ['email' => $email],
             [
-                'name' => config('services.riasku_admin.name', 'Admin RiasKu'),
+                'name' => $name,
                 'password_hash' => Hash::make($password),
                 'is_active' => true,
             ],
         );
+
+        $this->command?->info("AdminSeeder berhasil: Email: {$email} | Password: {$password}");
     }
 }

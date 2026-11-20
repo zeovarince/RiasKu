@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\KategoriController;
+use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\ShippingController;
 use App\Http\Middleware\EnsurePelanggan;
@@ -34,16 +37,39 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
+// Public Tracking & Payment Webhooks (PPL-19, PPL-20)
+Route::get('/orders/{orderCode}/track', [OrderController::class, 'track']);
+
+// Midtrans Webhook (URL resmi: POST /api/payments/midtrans/webhook)
+Route::post('/payments/midtrans/webhook', [PaymentController::class, 'midtransWebhook']);
+// Alias backward-compat untuk webhook lama
+Route::post('/payments/midtrans-notification', [PaymentController::class, 'midtransWebhook']);
+
 Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
-    Route::get('/orders', [CheckoutController::class, 'index']);
-    Route::get('/orders/{orderCode}', [CheckoutController::class, 'show']);
-    Route::post('/checkout', [CheckoutController::class, 'store']);
+    // Shipping Rates (PPL-17, PPL-18)
     Route::post('/shipping/rates', [ShippingController::class, 'rates']);
 
-    // Remote Cart Endpoints
-    Route::get('/cart', fn () => response()->json(['message' => 'Keranjang belanja', 'data' => ['items' => []]]));
-    Route::post('/cart/items', fn (Request $request) => response()->json(['message' => 'Item ditambahkan ke keranjang server', 'data' => $request->all()]));
-    Route::patch('/cart/items/{id}', fn (Request $request, $id) => response()->json(['message' => 'Item keranjang diperbarui', 'data' => array_merge(['id' => $id], $request->all())]));
-    Route::delete('/cart/items/{id}', fn ($id) => response()->json(['message' => 'Item keranjang dihapus', 'data' => ['id' => $id]]));
-    Route::delete('/cart', fn () => response()->json(['message' => 'Keranjang server dikosongkan', 'data' => []]));
+    // Orders & Checkout (PPL-17, 18, 19, 20)
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::post('/checkout', function (Request $request, \App\Services\ShippingCostService $shipping) {
+        if ($request->has('destination_zone_id')) {
+            return app(CheckoutController::class)->store($request, $shipping);
+        }
+        return app(OrderController::class)->store($request);
+    });
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);
+
+    // Payments & Realtime Sync (PPL-19)
+    Route::get('/payments/{id}', [PaymentController::class, 'status']);
+    Route::post('/payments/{id}/simulate-pay', [PaymentController::class, 'simulateSuccess']);
+    Route::post('/payments/{orderNumber}/sync-status', [PaymentController::class, 'syncStatus']);
+
+    // Remote Cart Endpoints (PPL-16)
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart/items', [CartController::class, 'store']);
+    Route::patch('/cart/items/{id}', [CartController::class, 'update']);
+    Route::delete('/cart/items/{id}', [CartController::class, 'destroy']);
+    Route::delete('/cart', [CartController::class, 'clear']);
 });

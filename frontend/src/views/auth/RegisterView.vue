@@ -9,16 +9,24 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
-const form = ref({ username: '', email: '', password: '' })
+const form = ref({ username: '', email: '', password: '', password_confirmation: '' })
 const isLoading = ref(false)
 const errorMessage = ref('')
 const fieldErrors = ref({})
 const showPassword = ref(false)
+const showPasswordConfirmation = ref(false)
 
 async function submit() {
-  isLoading.value = true
   errorMessage.value = ''
   fieldErrors.value = {}
+
+  if (form.value.password !== form.value.password_confirmation) {
+    fieldErrors.value = { password_confirmation: ['Konfirmasi kata sandi tidak cocok.'] }
+    errorMessage.value = 'Konfirmasi kata sandi tidak cocok.'
+    return
+  }
+
+  isLoading.value = true
   try {
     await register(form.value)
     await router.replace({ name: 'login', query: { ...route.query, registered: '1' } })
@@ -80,6 +88,36 @@ async function submitGoogle(credential) {
           </button>
         </div>
         <p id="regPassErr" class="err">{{ fieldErrors.password?.[0] || '' }}</p>
+      </div>
+
+      <div class="field">
+        <label for="regPassConfirm">Konfirmasi kata sandi</label>
+        <div class="control">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input
+            id="regPassConfirm"
+            v-model="form.password_confirmation"
+            name="password_confirmation"
+            :type="showPasswordConfirmation ? 'text' : 'password'"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Ulangi kata sandi"
+            :aria-invalid="Boolean(fieldErrors.password_confirmation)"
+            aria-describedby="regPassConfirmErr"
+            required
+          />
+          <button
+            class="toggle"
+            type="button"
+            :aria-label="showPasswordConfirmation ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'"
+            :aria-pressed="showPasswordConfirmation"
+            @click="showPasswordConfirmation = !showPasswordConfirmation"
+          >
+            <svg v-if="!showPasswordConfirmation" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
+          </button>
+        </div>
+        <p id="regPassConfirmErr" class="err">{{ fieldErrors.password_confirmation?.[0] || '' }}</p>
       </div>
 
       <button class="btn" :class="{ loading: isLoading }" type="submit" :disabled="isLoading">

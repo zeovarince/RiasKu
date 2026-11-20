@@ -36,7 +36,17 @@ button { cursor: pointer; }
 .prototype-strip-inner { display: flex; align-items: center; gap: 6px; }
 .step-pill { border: 1px solid #d8b7b9; color: #fff; border-radius: 999px; padding: 3px 10px; font-size: 9px; line-height: 13px; white-space: nowrap; }
 .step-pill.active { color: var(--ink); background: var(--cream); border-color: var(--cream); }
-.site-header { background: var(--paper); border-bottom: 1px solid var(--border); }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 249, 247, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 14px rgba(74, 44, 53, 0.05);
+  transition: all 0.2s ease;
+}
 .site-header-inner { max-width: 1440px; min-height: 72px; margin: 0 auto; padding: 14px 60px; display: flex; align-items: center; justify-content: space-between; gap: 26px; }
 .brand, .auth-brand, .admin-brand { color: var(--ink); font-family: var(--serif); font-size: 27px; font-weight: 700; letter-spacing: -1px; white-space: nowrap; }
 .brand span, .auth-brand span, .admin-brand span { color: var(--rose); }
@@ -215,6 +225,10 @@ button { cursor: pointer; }
   .admin-content { padding: 25px 20px; }
 }
 @media (max-width: 520px) {
+  .page-container { padding-left: 16px; padding-right: 16px; }
+  .site-header-inner { padding: 10px 16px; }
+  .brand { font-size: 22px; }
+  .header-search { width: 100%; order: 4; margin-top: 4px; }
   .hero-copy h1 { font-size: 33px; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-actions .button { width: 100%; }

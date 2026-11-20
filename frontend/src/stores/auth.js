@@ -27,6 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('riasku_access_token')
     localStorage.removeItem('riasku_user')
     sessionStorage.removeItem('riasku_access_token')
+    localStorage.removeItem('riasku_cart')
   }
 
   return { user, accessToken, isAuthenticated, setSession, clearSession }

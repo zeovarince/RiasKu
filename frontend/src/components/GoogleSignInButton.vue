@@ -53,3 +53,30 @@ onMounted(async () => {
     <p v-if="loadError" class="form-error" role="status">{{ loadError }}</p>
   </div>
 </template>
+
+<style scoped>
+.google-signin {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+.google-signin-host {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+.google-signin-host.is-disabled {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.form-error {
+  color: #b4233f;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 6px;
+}
+</style>
