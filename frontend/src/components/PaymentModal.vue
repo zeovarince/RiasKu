@@ -61,14 +61,19 @@ async function handleCheckStatus(manual = false) {
     const orderCode = props.order.order_code || props.order.id
     const result = await syncPaymentStatus(orderCode)
 
-    const paymentStatus = result?.order?.payment_status || result?.payment?.transaction_status
-    if (paymentStatus === 'dibayar' || paymentStatus === 'settlement' || result?.synced === true) {
+    const orderPayStatus = String(result?.order?.payment_status || '').toLowerCase()
+    const trxStatus = String(result?.midtrans_status || result?.payment?.transaction_status || '').toLowerCase()
+
+    if (['dibayar', 'lunas', 'settlement', 'capture'].includes(orderPayStatus) || ['settlement', 'capture'].includes(trxStatus)) {
       isPaid.value = true
       stopPolling()
       syncMessage.value = '✓ Pembayaran berhasil terverifikasi lunas secara real-time!'
       emit('payment-success', result)
+    } else if (['expire', 'cancel', 'deny', 'kadaluarsa', 'dibatalkan'].includes(trxStatus) || ['kadaluarsa', 'dibatalkan'].includes(orderPayStatus)) {
+      stopPolling()
+      syncMessage.value = `⚠️ Transaksi ${trxStatus || orderPayStatus}. Stok pesanan telah dikembalikan.`
     } else if (manual) {
-      syncMessage.value = `Status terkini: ${result?.midtrans_status || result?.payment?.transaction_status || 'Menunggu Pembayaran'}`
+      syncMessage.value = `Status terkini: ${trxStatus || orderPayStatus || 'Menunggu Pembayaran'}`
     }
   } catch (err) {
     if (manual) {
@@ -152,7 +157,7 @@ onUnmounted(() => {
           <!-- Total Tagihan -->
           <div class="payment-amount-box">
             <span>Total Tagihan Pembayaran</span>
-            <strong>{{ formatRupiah(order.total_amount) }}</strong>
+            <strong>{{ formatRupiah(order.total_amount ?? order.total ?? 0) }}</strong>
             <small v-if="!isCod">Batas waktu bayar: 24 Jam dari pemesanan</small>
             <small v-else>Bayar tunai kepada kurir saat barang tiba di Kota Surabaya</small>
           </div>
@@ -162,10 +167,11 @@ onUnmounted(() => {
             <div class="cod-badge-row">
               <span class="badge-cod-highlight">📍 COD KHUSUS KOTA SURABAYA</span>
             </div>
-            <p><strong>Penerima:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</p>
-            <p><strong>Alamat Pengiriman:</strong> {{ order.shipping_address }}, {{ order.shipping_city }}</p>
+            <p><strong>Penerima:</strong> {{ order.customer_name || order.recipient_name }} ({{ order.customer_phone || order.recipient_phone }})</p>
+            <p><strong>Alamat Pengiriman:</strong> {{ order.shipping_address }}, {{ order.shipping_city || order.destination_city }}</p>
+            <p v-if="order.shipping_courier || order.courier"><strong>Pengiriman:</strong> {{ order.shipping_courier || `${order.courier} ${order.courier_service || ''}`.trim() }}</p>
             <div class="notice-info">
-              ✓ Siapkan uang pas <strong>{{ formatRupiah(order.total_amount) }}</strong> saat kurir toko RiasKu tiba.<br/>
+              ✓ Siapkan uang pas <strong>{{ formatRupiah(order.total_amount ?? order.total ?? 0) }}</strong> saat kurir toko RiasKu tiba.<br/>
               ✓ Buka dan periksa paket Anda bersama kurir sebelum melakukan serah terima tunai.
             </div>
           </div>
@@ -250,8 +256,8 @@ onUnmounted(() => {
             <small>Salin nomor VA di atas, lalu tempel di simulator bank Midtrans untuk membayar.</small>
           </div>
 
-          <!-- Simulator Pembayaran Lokal Cepat (Fallback Praktikum) -->
-          <div class="simulator-box">
+          <!-- Simulator Pembayaran Lokal Cepat (Khusus Pembayaran Online, bukan COD) -->
+          <div v-if="!isCod" class="simulator-box">
             <span class="simulator-title">⚡ FITUR SIMULATOR INSTAN (OFFLINE/LOCAL TEST)</span>
             <p>Klik tombol di bawah untuk melunasi langsung secara lokal tanpa membuka simulator Midtrans:</p>
             <button

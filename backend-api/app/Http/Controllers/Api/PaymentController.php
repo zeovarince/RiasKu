@@ -94,6 +94,12 @@ class PaymentController extends Controller
             ->with('pesanan')
             ->firstOrFail();
 
+        if (!$payment->pesanan || $payment->pesanan->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke transaksi pembayaran ini.',
+            ], 403);
+        }
+
         return response()->json([
             'message' => 'Status pembayaran berhasil dimuat.',
             'data' => [
@@ -120,15 +126,28 @@ class PaymentController extends Controller
             ->with('pesanan')
             ->firstOrFail();
 
+        $order = $payment->pesanan;
+        if (!$order || $order->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke transaksi pembayaran ini.',
+            ], 403);
+        }
+
+        if ($order->payment_method === 'cod' || $payment->payment_type === 'cod_cash') {
+            return response()->json([
+                'message' => 'Pesanan COD tidak dapat disimulasikan oleh pelanggan. Konfirmasi pembayaran tunai dilakukan oleh Admin.',
+            ], 422);
+        }
+
         $payment->update([
             'transaction_status' => 'settlement',
             'paid_at' => now(),
         ]);
 
-        $order = $payment->pesanan;
         $order->update([
             'payment_status' => 'dibayar',
             'order_status' => 'diproses',
+            'status' => 'diproses',
         ]);
 
         return response()->json([
@@ -161,6 +180,12 @@ class PaymentController extends Controller
 
         if (!$order) {
             return response()->json(['message' => 'Pesanan tidak ditemukan.'], 404);
+        }
+
+        if ($order->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke pesanan ini.',
+            ], 403);
         }
 
         // COD tidak perlu sync ke Midtrans
@@ -217,6 +242,7 @@ class PaymentController extends Controller
             $order->update([
                 'payment_status' => 'dibayar',
                 'order_status' => 'diproses',
+                'status' => 'diproses',
             ]);
             $synced = true;
 
@@ -230,6 +256,7 @@ class PaymentController extends Controller
             $order->update([
                 'payment_status' => 'kadaluarsa',
                 'order_status' => 'dibatalkan',
+                'status' => 'dibatalkan',
             ]);
 
             // Kembalikan stok
@@ -305,6 +332,7 @@ class PaymentController extends Controller
             $order->update([
                 'payment_status' => 'dibayar',
                 'order_status' => 'diproses',
+                'status' => 'diproses',
             ]);
 
             Log::info("[Midtrans Webhook] Pesanan {$orderCode} → LUNAS (settlement)");
@@ -317,6 +345,7 @@ class PaymentController extends Controller
             $order->update([
                 'payment_status' => 'kadaluarsa',
                 'order_status' => 'dibatalkan',
+                'status' => 'dibatalkan',
             ]);
 
             // Kembalikan stok item pesanan

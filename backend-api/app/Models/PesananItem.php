@@ -33,6 +33,17 @@ class PesananItem extends Model
         'subtotal' => 'integer',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (PesananItem $item): void {
+            $computed = ((int) ($item->unit_price ?? 0)) * ((int) ($item->quantity ?? 1));
+            $item->line_total = $item->line_total ?? $item->subtotal ?? $computed;
+            $item->subtotal = $item->subtotal ?? $item->line_total ?? $computed;
+            $item->sku = $item->sku ?? $item->product_sku;
+            $item->product_sku = $item->product_sku ?? $item->sku;
+        });
+    }
+
     public function pesanan(): BelongsTo
     {
         return $this->belongsTo(Pesanan::class, 'pesanan_id');

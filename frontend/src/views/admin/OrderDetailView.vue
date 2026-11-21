@@ -96,10 +96,19 @@ async function fetchOrderDetail() {
     if (data) {
       order.value = {
         ...data,
+        customer_name: data.customer_name || data.recipient_name || 'Pelanggan',
+        customer_phone: data.customer_phone || data.recipient_phone || '-',
+        shipping_city: data.shipping_city || data.destination_city || 'Kota Surabaya',
+        shipping_district: data.shipping_district || data.destination_district || '',
+        shipping_postal_code: data.shipping_postal_code || data.destination_postal_code || '',
+        shipping_courier: data.shipping_courier || [data.courier, data.courier_service].filter(Boolean).join(' '),
+        shipping_resi: data.tracking_number || data.shipping_resi || null,
+        total_amount: Number(data.total_amount ?? data.total ?? 0),
+        shipping_cost: Number(data.shipping_cost ?? 0),
         items: data.items || [],
         payment_method: data.payment_method || (data.payment_channel === 'cash' ? 'cod' : 'online'),
       }
-      selectedStatus.value = data.order_status || 'diproses'
+      selectedStatus.value = data.order_status || data.status || 'diproses'
     }
   } catch (err) {
     // Fallback gracefully to default template data if mock or route id doesn't exist yet
@@ -189,16 +198,16 @@ onMounted(() => {
 
           <div v-for="item in order.items" :key="item.id" class="admin-order-item">
             <span class="admin-product-thumb large">
-              <img v-if="item.produk?.primary_foto?.foto_url" :src="item.produk.primary_foto.foto_url" :alt="item.product_name" />
+              <img v-if="item.produk?.primary_foto?.image_url || item.produk?.image_url" :src="item.produk?.primary_foto?.image_url || item.produk?.image_url" :alt="item.product_name" />
               <span v-else>R</span>
             </span>
             <div class="admin-order-item-name">
-              <strong>{{ item.product_name || item.produk?.nama_produk }}</strong>
-              <small>{{ item.variant_name || item.varian?.nama_varian || 'Standar' }}</small>
+              <strong>{{ item.product_name || item.produk?.name }}</strong>
+              <small>{{ item.variant_name || item.varian?.name || 'Standar' }}</small>
             </div>
             <span>{{ item.quantity }} pcs</span>
-            <strong>{{ formatRupiah(item.price) }}</strong>
-            <strong>{{ formatRupiah(item.subtotal || item.price * item.quantity) }}</strong>
+            <strong>{{ formatRupiah(item.unit_price ?? item.price ?? 0) }}</strong>
+            <strong>{{ formatRupiah(item.subtotal ?? item.line_total ?? ((item.unit_price ?? item.price ?? 0) * item.quantity)) }}</strong>
           </div>
 
           <div class="admin-order-totals">

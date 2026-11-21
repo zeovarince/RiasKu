@@ -26,14 +26,59 @@ const isPaid = computed(() => {
 
 const orderTimelineStep = computed(() => {
   if (!order.value) return 1
-  const s = order.value.order_status
-  if (s === 'menunggu_pembayaran') return isPaid.value ? 2 : 1
+  const s = order.value.order_status || order.value.status || 'menunggu_pembayaran'
+  if (s === 'menunggu_pembayaran' || s === 'pending') return isPaid.value ? 2 : 1
   if (s === 'diproses') return 3
   if (s === 'dikirim') return 4
   if (s === 'selesai') return 5
   if (s === 'dibatalkan') return 0
   return 2
 })
+
+const displayOrderStatus = computed(() => {
+  return order.value?.order_status || order.value?.status || 'menunggu_pembayaran'
+})
+
+const displayTotalAmount = computed(() => {
+  return Number(order.value?.total_amount ?? order.value?.total ?? 0)
+})
+
+const displaySubtotal = computed(() => {
+  const shippingCost = Number(order.value?.shipping_cost ?? 0)
+  return Number(order.value?.total_product_amount ?? order.value?.subtotal ?? Math.max(0, displayTotalAmount.value - shippingCost))
+})
+
+const displayShippingCost = computed(() => Number(order.value?.shipping_cost ?? 0))
+
+const displayCity = computed(() => {
+  return order.value?.shipping_city || order.value?.destination_city || '-'
+})
+
+const displayDestination = computed(() => {
+  return [
+    order.value?.shipping_district || order.value?.destination_district,
+    order.value?.shipping_city || order.value?.destination_city,
+    order.value?.destination_province,
+    order.value?.shipping_postal_code || order.value?.destination_postal_code,
+  ].filter(Boolean).join(', ')
+})
+
+const displayCourier = computed(() => {
+  if (order.value?.shipping_courier) return order.value.shipping_courier
+  if (order.value?.courier) {
+    const base = `${order.value.courier} ${order.value.courier_service || ''}`.trim()
+    return order.value.shipping_etd ? `${base} (${order.value.shipping_etd})` : base
+  }
+  return isCod.value ? 'Kurir Toko RiasKu Surabaya' : 'Reguler Courier'
+})
+
+function itemUnitPrice(item) {
+  return Number(item?.unit_price ?? item?.price ?? 0)
+}
+
+function itemLineTotal(item) {
+  return Number(item?.subtotal ?? item?.line_total ?? itemUnitPrice(item) * Number(item?.quantity || 0))
+}
 
 function formatDateTime(isoString) {
   if (!isoString) return '-'
@@ -182,8 +227,8 @@ watch(() => route.query.code, (newCode) => {
           <span class="order-date-text">Dibuat pada: {{ formatDateTime(order.created_at) }}</span>
         </div>
         <div class="status-badge-wrap">
-          <span class="badge-status" :class="`status-${order.order_status}`">
-            {{ order.order_status.replace('_', ' ').toUpperCase() }}
+          <span class="badge-status" :class="`status-${displayOrderStatus}`">
+            {{ displayOrderStatus.replace(/_/g, ' ').toUpperCase() }}
           </span>
         </div>
       </header>
@@ -232,17 +277,19 @@ watch(() => route.query.code, (newCode) => {
         <div class="info-grid">
           <div>
             <span class="info-label">Penerima</span>
-            <strong>{{ order.customer_name }}</strong>
-            <small>{{ order.customer_phone }}</small>
+            <strong>{{ order.customer_name || order.recipient_name }}</strong>
+            <small>{{ order.customer_phone || order.recipient_phone }}</small>
           </div>
           <div>
-            <span class="info-label">Kota Tujuan</span>
-            <strong>{{ order.shipping_city }}</strong>
-            <span v-if="order.shipping_city === 'Kota Surabaya'" class="badge-sub-highlight">📍 Wilayah COD Toko Surabaya</span>
+            <span class="info-label">Tujuan Pengiriman</span>
+            <strong>{{ displayDestination || displayCity }}</strong>
+            <span v-if="String(displayCity).toLowerCase().includes('surabaya')" class="badge-sub-highlight">📍 Wilayah COD Toko Surabaya</span>
           </div>
           <div>
             <span class="info-label">Ekspedisi / Pengantar</span>
-            <strong>{{ order.shipping_courier || (isCod ? 'Kurir Toko RiasKu Surabaya' : 'Reguler Courier') }}</strong>
+            <strong>{{ displayCourier }}</strong>
+            <small v-if="order.weight_grams">Berat: {{ order.weight_grams }} g</small>
+            <small v-if="order.tracking_number"> · Resi: {{ order.tracking_number }}</small>
           </div>
         </div>
       </section>
@@ -271,7 +318,7 @@ watch(() => route.query.code, (newCode) => {
         <div v-if="isCod && !isPaid" class="cod-helper-alert">
           <p>
             📍 <strong>Instruksi COD Surabaya:</strong> Pesanan Anda akan dikirim langsung oleh kurir toko RiasKu.
-            Harap siapkan uang tunai pas sebesar <strong>{{ formatRupiah(order.total_amount) }}</strong> saat serah terima paket di lokasi.
+            Harap siapkan uang tunai pas sebesar <strong>{{ formatRupiah(displayTotalAmount) }}</strong> saat serah terima paket di lokasi.
           </p>
         </div>
 
@@ -323,20 +370,25 @@ watch(() => route.query.code, (newCode) => {
               <small class="item-qty-tag">Jumlah: {{ item.quantity }} pcs</small>
             </div>
             <div class="item-price-calc">
-              <span class="unit-price">{{ formatRupiah(item.price) }} × {{ item.quantity }}</span>
-              <strong class="subtotal-price">{{ formatRupiah(item.subtotal || item.price * item.quantity) }}</strong>
+              <span class="unit-price">{{ formatRupiah(itemUnitPrice(item)) }} × {{ item.quantity }}</span>
+              <strong class="subtotal-price">{{ formatRupiah(itemLineTotal(item)) }}</strong>
             </div>
           </div>
         </div>
 
         <div class="total-breakdown">
           <div class="breakdown-row">
-            <span>Biaya Pengiriman</span>
-            <span class="free-text">GRATIS (Promo RiasKu)</span>
+            <span>Subtotal Produk</span>
+            <strong>{{ formatRupiah(displaySubtotal) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>Biaya Pengiriman ({{ displayCourier }})</span>
+            <span v-if="displayShippingCost === 0" class="free-text">GRATIS (Promo RiasKu)</span>
+            <strong v-else>{{ formatRupiah(displayShippingCost) }}</strong>
           </div>
           <div class="breakdown-row total-grand">
             <strong>Total Tagihan</strong>
-            <strong class="total-amount">{{ formatRupiah(order.total_amount) }}</strong>
+            <strong class="total-amount">{{ formatRupiah(displayTotalAmount) }}</strong>
           </div>
         </div>
       </section>

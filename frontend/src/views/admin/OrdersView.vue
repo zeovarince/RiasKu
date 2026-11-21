@@ -60,13 +60,13 @@ async function fetchOrders() {
     if (apiOrders.length > 0) {
       const mapped = apiOrders.map((o) => ({
         code: o.order_code,
-        customer: o.customer_name,
+        customer: o.customer_name || o.recipient_name || 'Pelanggan',
         item: `${o.items?.length || 1} item`,
-        total: formatRupiah(o.total_amount),
+        total: formatRupiah(o.total_amount ?? o.total ?? 0),
         payment: o.payment_method === 'cod' ? 'COD (Uang Tunai)' : `Online (${(o.payment_channel || 'Midtrans').toUpperCase()})`,
         paymentTone: o.payment_status === 'dibayar' ? 'green' : 'gold',
-        status: mapStatusLabel(o.order_status),
-        tone: mapTone(o.order_status),
+        status: mapStatusLabel(o.order_status || o.status),
+        tone: mapTone(o.order_status || o.status),
         date: formatDate(o.created_at),
         rawMethod: o.payment_method,
       }))

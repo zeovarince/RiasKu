@@ -88,6 +88,7 @@ class OrderManagementController extends Controller
 
         $order->update([
             'order_status' => $validated['status'],
+            'status' => $validated['status'],
         ]);
 
         return response()->json([
@@ -121,6 +122,7 @@ class OrderManagementController extends Controller
         $order->update([
             'payment_status' => 'dibayar',
             'order_status' => 'selesai',
+            'status' => 'selesai',
         ]);
 
         $payment = $order->latestPembayaran;

@@ -53,7 +53,7 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::post('/checkout', function (Request $request, \App\Services\ShippingCostService $shipping) {
-        if ($request->has('destination_zone_id')) {
+        if ($request->has('destination_zone_id') && !$request->has('payment_channel')) {
             return app(CheckoutController::class)->store($request, $shipping);
         }
         return app(OrderController::class)->store($request);

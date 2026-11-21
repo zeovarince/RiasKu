@@ -74,6 +74,39 @@ class Pesanan extends Model
                 $pesanan->order_code = "RSK-{$date}-{$random}";
             }
         });
+
+        static::saving(function (Pesanan $pesanan): void {
+            // Sinkronkan pasangan kolom skema PPL-17/18 dan PPL-19/20 agar konsisten di PostgreSQL & SQLite
+            $pesanan->recipient_name = $pesanan->recipient_name ?? $pesanan->customer_name ?? '';
+            $pesanan->customer_name = $pesanan->customer_name ?? $pesanan->recipient_name ?? '';
+
+            $pesanan->recipient_phone = $pesanan->recipient_phone ?? $pesanan->customer_phone ?? '';
+            $pesanan->customer_phone = $pesanan->customer_phone ?? $pesanan->recipient_phone ?? '';
+
+            $pesanan->subtotal = $pesanan->subtotal ?? $pesanan->total_product_amount ?? 0;
+            $pesanan->total_product_amount = $pesanan->total_product_amount ?? $pesanan->subtotal ?? 0;
+
+            $pesanan->shipping_cost = $pesanan->shipping_cost ?? 0;
+
+            $pesanan->total = $pesanan->total ?? $pesanan->total_amount ?? ($pesanan->subtotal + $pesanan->shipping_cost);
+            $pesanan->total_amount = $pesanan->total_amount ?? $pesanan->total ?? ($pesanan->total_product_amount + $pesanan->shipping_cost);
+
+            $pesanan->order_status = $pesanan->order_status ?? $pesanan->status ?? 'menunggu_pembayaran';
+            $pesanan->status = $pesanan->status ?? $pesanan->order_status ?? 'pending';
+
+            $pesanan->shipping_city = $pesanan->shipping_city ?? $pesanan->destination_city;
+            $pesanan->destination_city = $pesanan->destination_city ?? $pesanan->shipping_city;
+
+            $pesanan->shipping_district = $pesanan->shipping_district ?? $pesanan->destination_district;
+            $pesanan->destination_district = $pesanan->destination_district ?? $pesanan->shipping_district;
+
+            $pesanan->shipping_postal_code = $pesanan->shipping_postal_code ?? $pesanan->destination_postal_code;
+            $pesanan->destination_postal_code = $pesanan->destination_postal_code ?? $pesanan->shipping_postal_code;
+
+            if (empty($pesanan->shipping_courier) && ($pesanan->courier || $pesanan->courier_service)) {
+                $pesanan->shipping_courier = trim(($pesanan->courier ?? '') . ' ' . ($pesanan->courier_service ?? ''));
+            }
+        });
     }
 
     public function pelanggan(): BelongsTo
