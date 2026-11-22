@@ -41,6 +41,7 @@ const form = ref({
 
 // Custom variants toggle & list
 const useCustomVariants = ref(false)
+const originalInitialStock = ref(null)
 const customVariants = ref([
   { name: '', stock: 0 },
 ])
@@ -124,14 +125,27 @@ async function loadProduct() {
       initial_stock: p.total_stock || 0,
     }
 
-    if (p.varians && p.varians.length > 0) {
-      if (p.varians.length === 1 && p.varians[0].name === 'Standar') {
+    const activeVarians = (p.varians || []).filter((v) => v.is_active !== false)
+    if (activeVarians.length > 0) {
+      if (activeVarians.length === 1 && activeVarians[0].name === 'Standar') {
         useCustomVariants.value = false
-        form.value.initial_stock = p.varians[0].stock
+        form.value.initial_stock = activeVarians[0].stock
+        originalInitialStock.value = activeVarians[0].stock
       } else {
         useCustomVariants.value = true
-        customVariants.value = p.varians.map(v => ({ id: v.id, name: v.name, stock: v.stock, is_active: v.is_active }))
+        originalInitialStock.value = null
+        customVariants.value = activeVarians.map(v => ({
+          id: v.id,
+          name: v.name,
+          stock: v.stock,
+          original_stock: v.stock,
+          is_active: v.is_active,
+        }))
       }
+    } else {
+      useCustomVariants.value = false
+      form.value.initial_stock = p.total_stock || 0
+      originalInitialStock.value = p.total_stock || 0
     }
 
     existingPhotos.value = p.fotos || []
@@ -249,11 +263,16 @@ async function saveProduct() {
 
   if (useCustomVariants.value) {
     payload.varians = customVariants.value.filter(v => v.name.trim()).map(v => ({
+      ...(v.id ? { id: v.id } : {}),
+      ...(v.id && v.original_stock !== undefined ? { original_stock: Number(v.original_stock) } : {}),
       name: v.name.trim(),
       stock: Number(v.stock) || 0,
     }))
   } else {
     payload.initial_stock = Number(form.value.initial_stock) || 0
+    if (isEdit.value && originalInitialStock.value !== null) {
+      payload.original_initial_stock = Number(originalInitialStock.value)
+    }
   }
 
   try {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AiAssistantController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\CustomerAuthController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\ShippingController;
 use App\Http\Middleware\EnsurePelanggan;
+use App\Services\ShippingCostService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +33,18 @@ Route::get('/produk/{id}', [ProdukController::class, 'show']);
 
 Route::get('/shipping/zones', [ShippingController::class, 'zones'])->middleware('throttle:60,1');
 
+// Asisten Chat AI (PPL-28 - Public & Customer-Aware + Multi-Session History)
+Route::prefix('ai')->group(function (): void {
+    Route::get('/status', [AiAssistantController::class, 'status'])->middleware('throttle:ai-read');
+    Route::post('/chat', [AiAssistantController::class, 'chat'])->middleware('throttle:ai-chat');
+    Route::get('/history', [AiAssistantController::class, 'history'])->middleware('throttle:ai-read');
+    Route::delete('/history', [AiAssistantController::class, 'clearHistory'])->middleware('throttle:ai-write');
+    Route::get('/sessions', [AiAssistantController::class, 'sessions'])->middleware('throttle:ai-read');
+    Route::patch('/sessions/{sessionToken}', [AiAssistantController::class, 'renameSession'])->middleware('throttle:ai-write');
+    Route::delete('/sessions/{sessionToken}', [AiAssistantController::class, 'deleteSession'])->middleware('throttle:ai-write');
+    Route::get('/suggestions', [AiAssistantController::class, 'suggestions'])->middleware('throttle:ai-read');
+});
+
 // Protected Customer Routes
 Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): void {
     Route::get('/me', [CustomerAuthController::class, 'me']);
@@ -38,7 +52,7 @@ Route::prefix('auth')->middleware(['auth:sanctum', EnsurePelanggan::class])->gro
 });
 
 // Public Tracking & Payment Webhooks (PPL-19, PPL-20)
-Route::get('/orders/{orderCode}/track', [OrderController::class, 'track']);
+Route::get('/orders/{orderCode}/track', [OrderController::class, 'track'])->middleware('throttle:order-track');
 
 // Midtrans Webhook (URL resmi: POST /api/payments/midtrans/webhook)
 Route::post('/payments/midtrans/webhook', [PaymentController::class, 'midtransWebhook']);
@@ -52,13 +66,15 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
     // Orders & Checkout (PPL-17, 18, 19, 20)
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
-    Route::post('/checkout', function (Request $request, \App\Services\ShippingCostService $shipping) {
-        if ($request->has('destination_zone_id') && !$request->has('payment_channel')) {
+    Route::post('/checkout', function (Request $request, ShippingCostService $shipping) {
+        if ($request->has('destination_zone_id') && ! $request->has('payment_channel')) {
             return app(CheckoutController::class)->store($request, $shipping);
         }
+
         return app(OrderController::class)->store($request);
     });
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/complete', [OrderController::class, 'complete']);
     Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);
 
     // Payments & Realtime Sync (PPL-19)

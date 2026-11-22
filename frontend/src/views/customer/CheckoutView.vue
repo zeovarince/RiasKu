@@ -94,8 +94,21 @@ const isSurabaya = computed(() => {
   return String(buyer.value.city || '').toLowerCase().includes('surabaya')
 })
 
+const hasPreorderItems = computed(() => cart.items.some((item) => Boolean(item.is_preorder_item)))
+const maxPreorderDays = computed(() => {
+  const days = cart.items
+    .filter((item) => Boolean(item.is_preorder_item))
+    .map((item) => Number(item.preorder_estimate_days || 0))
+    .filter((d) => d > 0)
+  return days.length ? Math.max(...days) : null
+})
+
 const subtotalAmount = computed(() => {
-  if (quote.value?.subtotal !== undefined && quote.value?.subtotal !== null) {
+  if (
+    quote.value?.subtotal !== undefined
+    && quote.value?.subtotal !== null
+    && rateItemPayload.value.length === cart.items.length
+  ) {
     return Number(quote.value.subtotal)
   }
   return Number(cart.subtotal || 0)
@@ -172,7 +185,13 @@ async function loadShippingQuote() {
   shippingError.value = ''
   loadingRates.value = false
 
-  if (!selectedZone.value || rateItemPayload.value.length === 0) return
+  if (!selectedZone.value) return
+  if (rateItemPayload.value.length === 0) {
+    if (cart.items.length > 0) {
+      shippingError.value = 'Sebagian item keranjang belum memiliki varian valid. Mohon perbarui keranjang belanja Anda.'
+    }
+    return
+  }
 
   loadingRates.value = true
   try {
@@ -327,7 +346,7 @@ async function submitCheckout() {
     customer_phone: buyer.value.phone.trim(),
     shipping_address: buyer.value.address.trim(),
     shipping_city: selectedZone.value?.city || buyer.value.city,
-    shipping_district: selectedZone.value?.district || cleanDistrict || 'Surabaya',
+    shipping_district: selectedZone.value?.district || cleanDistrict || null,
     shipping_postal_code: selectedZone.value?.postal_code || cleanPostal || null,
     ...(selectedZone.value && selectedRate.value ? {
       destination_zone_id: selectedZone.value.id,
@@ -699,11 +718,18 @@ async function submitCheckout() {
             <div>
               <span class="item-name">{{ item.name }}</span>
               <small v-if="item.variantName" class="item-sub">Varian: {{ item.variantName }}</small>
+              <span v-if="item.is_preorder_item" class="stock-pill pill-preorder" style="margin-top: 3px;">
+                Pre-Order{{ item.preorder_estimate_days ? ` · Est. ${item.preorder_estimate_days} hari` : '' }}
+              </span>
               <small class="item-qty">Qty: {{ item.quantity }} pcs</small>
             </div>
             <strong>{{ formatRupiah(item.price * item.quantity) }}</strong>
           </div>
         </div>
+
+        <p v-if="hasPreorderItems" class="cart-po-summary-note" style="margin-bottom: 1rem;">
+          ⏳ Pesanan ini memuat produk <strong>Pre-Order</strong> dengan estimasi penyiapan{{ maxPreorderDays ? ` hingga ${maxPreorderDays} hari` : '' }} sebelum pengiriman.
+        </p>
 
         <div class="summary-calculation">
           <div class="summary-sub-line">

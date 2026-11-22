@@ -14,6 +14,30 @@ function makeCartKey(productId, variantId = null) {
   return `${productId}:${variantId ?? 'default'}`
 }
 
+function resolveCartStockMeta(product, variant = null, row = null) {
+  const stock = Number(variant?.stock ?? product?.stock ?? product?.total_stock ?? 9999)
+  const isProductPreorder = Boolean(
+    product?.is_preorder || product?.stock_label === 'Pre-Order' || row?.is_preorder_item,
+  )
+  const isPreorderItem = Boolean(
+    row?.is_preorder_item ?? variant?.is_preorder_item ?? (stock <= 0 && isProductPreorder),
+  )
+  const estimateDays = isPreorderItem
+    ? (row?.preorder_estimate_days ?? variant?.preorder_estimate_days ?? product?.preorder_estimate_days ?? null)
+    : null
+  const stockLabel = row?.stock_label ?? variant?.stock_label ?? (
+    stock > 0 ? 'Tersedia' : isPreorderItem ? 'Pre-Order' : 'Stok Habis'
+  )
+
+  return {
+    stock,
+    is_preorder_item: isPreorderItem,
+    preorder_estimate_days: estimateDays,
+    stock_label: stockLabel,
+    maxQuantity: isPreorderItem ? 99 : stock,
+  }
+}
+
 function readSavedCart() {
   const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
   if (!token) {
@@ -87,11 +111,16 @@ export const useCartStore = defineStore('cart', () => {
       const serverItems = rows.map((row) => {
         const product = row.product || row
         const variant = row.variant || null
+        const stockMeta = resolveCartStockMeta(product, variant, row)
         return {
           ...product,
           id: product.id,
           price: Number(row.unit_price ?? variant?.price ?? product.price ?? 0),
           quantity: Math.max(1, Number(row.quantity) || 1),
+          stock: stockMeta.stock,
+          is_preorder_item: stockMeta.is_preorder_item,
+          preorder_estimate_days: stockMeta.preorder_estimate_days,
+          stock_label: stockMeta.stock_label,
           variantId: variant?.id ?? row.variant_id ?? null,
           variantName: variant?.name ?? row.variant_name ?? null,
           serverCartItemId: row.id,
@@ -141,17 +170,29 @@ export const useCartStore = defineStore('cart', () => {
     const variantId = variant?.id ?? null
     const cartKey = makeCartKey(product.id, variantId)
     const requestedQuantity = Math.max(1, Number(quantity) || 1)
-    const stock = Number(variant?.stock ?? product.stock ?? 9999)
+    const stockMeta = resolveCartStockMeta(product, variant)
+
+    if (!stockMeta.is_preorder_item && stockMeta.stock <= 0) {
+      return null
+    }
+
     const existing = items.value.find((item) => item.cartKey === cartKey)
 
     if (existing) {
-      existing.quantity = Math.min(stock, existing.quantity + requestedQuantity)
+      existing.stock = stockMeta.stock
+      existing.is_preorder_item = stockMeta.is_preorder_item
+      existing.preorder_estimate_days = stockMeta.preorder_estimate_days
+      existing.stock_label = stockMeta.stock_label
+      existing.quantity = Math.min(stockMeta.maxQuantity, existing.quantity + requestedQuantity)
     } else {
       items.value.push({
         ...product,
         price: Number(variant?.price ?? product.price ?? 0),
-        quantity: Math.min(stock, requestedQuantity),
-        stock,
+        quantity: Math.min(stockMeta.maxQuantity, requestedQuantity),
+        stock: stockMeta.stock,
+        is_preorder_item: stockMeta.is_preorder_item,
+        preorder_estimate_days: stockMeta.preorder_estimate_days,
+        stock_label: stockMeta.stock_label,
         variantId,
         variantName: variant?.name ?? null,
         cartKey,
@@ -163,7 +204,12 @@ export const useCartStore = defineStore('cart', () => {
       const payload = { product_id: product.id, variant_id: variantId, quantity: requestedQuantity }
       addCartItem(payload)
         .then((result) => {
-          if (current && result?.id) current.serverCartItemId = result.id
+          if (current && result?.id) {
+            current.serverCartItemId = result.id
+            if (result.is_preorder_item !== undefined) current.is_preorder_item = Boolean(result.is_preorder_item)
+            if (result.preorder_estimate_days !== undefined) current.preorder_estimate_days = result.preorder_estimate_days
+            if (result.stock_label) current.stock_label = result.stock_label
+          }
           syncError.value = ''
         })
         .catch(setSyncError)
@@ -178,7 +224,8 @@ export const useCartStore = defineStore('cart', () => {
     const nextQuantity = Number(quantity)
     if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) return removeItem(item.cartKey)
 
-    item.quantity = Math.min(Number(item.stock ?? 9999), Math.floor(nextQuantity))
+    const maxQty = item.is_preorder_item ? 99 : Number(item.stock ?? 9999)
+    item.quantity = Math.max(1, Math.min(maxQty, Math.floor(nextQuantity)))
     if (remoteCartEnabled() && item.serverCartItemId) {
       updateCartItem(item.serverCartItemId, { quantity: item.quantity })
         .then(() => { syncError.value = '' })

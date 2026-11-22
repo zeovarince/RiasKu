@@ -3,30 +3,58 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Pembayaran;
 use App\Models\Pesanan;
+use App\Services\OrderStatusService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OrderManagementController extends Controller
 {
+    public function __construct(protected OrderStatusService $orderStatusService) {}
+
     public function index(Request $request): JsonResponse
     {
         $query = Pesanan::query()
-            ->with(['items.produk', 'latestPembayaran'])
+            ->with(OrderStatusService::orderRelations(false))
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('search'))) {
-            $query->where(function ($sub) use ($search) {
+            $query->where(function (Builder $sub) use ($search): void {
                 $sub->where('order_code', 'like', "%{$search}%")
                     ->orWhere('customer_name', 'like', "%{$search}%")
-                    ->orWhere('customer_phone', 'like', "%{$search}%");
+                    ->orWhere('recipient_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhere('recipient_phone', 'like', "%{$search}%")
+                    ->orWhere('tracking_number', 'like', "%{$search}%");
             });
         }
 
         if ($status = trim((string) $request->query('status'))) {
             if ($status !== 'Semua' && $status !== 'all') {
-                $query->where('order_status', strtolower($status));
+                $normalizedStatus = strtolower($status);
+                $query->where(function (Builder $sub) use ($normalizedStatus): void {
+                    $sub->where('order_status', $normalizedStatus)
+                        ->orWhere(function (Builder $legacy) use ($normalizedStatus): void {
+                            $legacy->whereNull('order_status');
+                            if ($normalizedStatus === 'menunggu_pembayaran') {
+                                $legacy->where('status', 'pending')
+                                    ->where(function (Builder $pm): void {
+                                        $pm->whereNull('payment_method')->orWhere('payment_method', '!=', 'cod');
+                                    });
+                            } elseif ($normalizedStatus === 'diproses') {
+                                $legacy->where(function (Builder $dip): void {
+                                    $dip->where('status', 'diproses')
+                                        ->orWhere(function (Builder $codPending): void {
+                                            $codPending->where('status', 'pending')->where('payment_method', 'cod');
+                                        });
+                                });
+                            } else {
+                                $legacy->where('status', $normalizedStatus);
+                            }
+                        });
+                });
             }
         }
 
@@ -34,6 +62,11 @@ class OrderManagementController extends Controller
             if ($paymentMethod !== 'all') {
                 $query->where('payment_method', strtolower($paymentMethod));
             }
+        }
+
+        if ($request->filled('is_preorder') && $request->query('is_preorder') !== 'all') {
+            $isPreorder = filter_var($request->query('is_preorder'), FILTER_VALIDATE_BOOLEAN);
+            $query->where('has_preorder_items', $isPreorder);
         }
 
         $perPage = max(1, min(50, (int) $request->query('per_page', 15)));
@@ -48,20 +81,14 @@ class OrderManagementController extends Controller
                 'per_page' => $paginated->perPage(),
                 'total' => $paginated->total(),
             ],
+            'summary' => $this->buildStatusSummary(),
         ]);
     }
 
     public function show(int|string $id): JsonResponse
     {
-        $order = Pesanan::query()
-            ->where(function ($sub) use ($id) {
-                if (is_numeric($id)) {
-                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
-                } else {
-                    $sub->where('order_code', (string) $id);
-                }
-            })
-            ->with(['items.produk.primaryFoto', 'pembayarans', 'pelanggan'])
+        $order = $this->findOrderByIdOrCode($id)
+            ->with(OrderStatusService::orderRelations(true))
             ->firstOrFail();
 
         return response()->json([
@@ -74,26 +101,31 @@ class OrderManagementController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'string', 'in:menunggu_pembayaran,diproses,dikirim,selesai,dibatalkan'],
+            'tracking_number' => ['nullable', 'string', 'max:100'],
+            'shipping_courier' => ['nullable', 'string', 'max:100'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ], [
+            'status.required' => 'Status pesanan wajib dipilih.',
+            'status.in' => 'Status pesanan tidak valid.',
+            'tracking_number.max' => 'Nomor resi maksimal 100 karakter.',
+            'note.max' => 'Catatan maksimal 500 karakter.',
         ]);
 
-        $order = Pesanan::query()
-            ->where(function ($sub) use ($id) {
-                if (is_numeric($id)) {
-                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
-                } else {
-                    $sub->where('order_code', (string) $id);
-                }
-            })
-            ->firstOrFail();
+        $order = $this->findOrderByIdOrCode($id)->firstOrFail();
+        $admin = $request->user();
 
-        $order->update([
-            'order_status' => $validated['status'],
-            'status' => $validated['status'],
+        $updated = $this->orderStatusService->transition($order, $validated['status'], [
+            'actor_type' => 'admin',
+            'actor_id' => $admin?->id,
+            'actor_name' => $admin?->name ?? 'Admin',
+            'tracking_number' => $validated['tracking_number'] ?? null,
+            'shipping_courier' => $validated['shipping_courier'] ?? null,
+            'note' => $validated['note'] ?? null,
         ]);
 
         return response()->json([
-            'message' => "Status pesanan {$order->order_code} berhasil diperbarui menjadi {$order->order_status}.",
-            'data' => $order->fresh(['items', 'latestPembayaran']),
+            'message' => "Status pesanan {$updated->order_code} berhasil diperbarui menjadi {$updated->order_status}.",
+            'data' => $updated,
         ]);
     }
 
@@ -103,52 +135,67 @@ class OrderManagementController extends Controller
      */
     public function confirmCodPayment(Request $request, int|string $id): JsonResponse
     {
-        $order = Pesanan::query()
-            ->where(function ($sub) use ($id) {
-                if (is_numeric($id)) {
-                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
-                } else {
-                    $sub->where('order_code', (string) $id);
-                }
-            })
-            ->firstOrFail();
+        $order = $this->findOrderByIdOrCode($id)->firstOrFail();
+        $admin = $request->user();
 
-        if ($order->payment_method !== 'cod' && $order->payment_channel !== 'cash') {
-            return response()->json([
-                'message' => 'Konfirmasi pembayaran tunai hanya berlaku untuk metode COD.',
-            ], 422);
-        }
-
-        $order->update([
-            'payment_status' => 'dibayar',
-            'order_status' => 'selesai',
-            'status' => 'selesai',
+        $updated = $this->orderStatusService->markCodPaid($order, [
+            'actor_type' => 'admin',
+            'actor_id' => $admin?->id,
+            'actor_name' => $admin?->name ?? 'Admin',
         ]);
-
-        $payment = $order->latestPembayaran;
-        if ($payment) {
-            $payment->update([
-                'transaction_status' => 'settlement',
-                'paid_at' => now(),
-            ]);
-        } else {
-            Pembayaran::create([
-                'pesanan_id' => $order->id,
-                'transaction_id' => 'COD-PAID-' . $order->order_code,
-                'payment_type' => 'cod_cash',
-                'gross_amount' => $order->total_amount,
-                'transaction_status' => 'settlement',
-                'paid_at' => now(),
-                'payload_response' => [
-                    'confirmed_by' => $request->user()->name ?? 'Admin',
-                    'note' => 'Uang tunai COD diterima dan dikonfirmasi oleh Admin',
-                ],
-            ]);
-        }
 
         return response()->json([
-            'message' => "Pembayaran COD untuk pesanan {$order->order_code} berhasil dikonfirmasi lunas.",
-            'data' => $order->fresh(['items', 'latestPembayaran']),
+            'message' => "Pembayaran COD untuk pesanan {$updated->order_code} berhasil dikonfirmasi lunas.",
+            'data' => $updated,
         ]);
+    }
+
+    private function findOrderByIdOrCode(int|string $id): Builder
+    {
+        return Pesanan::query()->where(function (Builder $sub) use ($id): void {
+            if (is_numeric($id)) {
+                $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+            } else {
+                $sub->where('order_code', (string) $id);
+            }
+        });
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function buildStatusSummary(): array
+    {
+        $summary = [
+            'all' => 0,
+            'menunggu_pembayaran' => 0,
+            'diproses' => 0,
+            'dikirim' => 0,
+            'selesai' => 0,
+            'dibatalkan' => 0,
+            'action_required_count' => 0,
+        ];
+
+        $rows = Pesanan::query()
+            ->select(['order_status', 'status', 'payment_method', DB::raw('COUNT(*) as total_rows')])
+            ->groupBy(['order_status', 'status', 'payment_method'])
+            ->get();
+
+        foreach ($rows as $row) {
+            $count = (int) $row->total_rows;
+            $raw = strtolower(trim((string) ($row->order_status ?: $row->status ?: 'menunggu_pembayaran')));
+            if ($raw === 'pending') {
+                $raw = strtolower((string) $row->payment_method) === 'cod' ? 'diproses' : 'menunggu_pembayaran';
+            }
+
+            $summary['all'] += $count;
+            if (array_key_exists($raw, $summary)) {
+                $summary[$raw] += $count;
+            }
+        }
+
+        $summary['action_required_count'] = $summary['menunggu_pembayaran'] + $summary['diproses'];
+
+        return $summary;
     }
 }

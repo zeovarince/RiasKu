@@ -34,12 +34,27 @@ export function normalizeProduct(product) {
       : Array.isArray(product.active_varians)
         ? product.active_varians
         : []
-  const variants = rawVariants.map((variant) => ({
-    ...variant,
-    name: variant.name ?? variant.nama ?? 'Standar',
-    price: Number(variant.price ?? price),
-    stock: Number(variant.stock ?? variant.stok ?? 0),
-  }))
+  const variants = rawVariants.map((variant) => {
+    const vStock = Number(variant.stock ?? variant.stok ?? 0)
+    const vActive = variant.is_active !== undefined ? Boolean(variant.is_active) : true
+    const vIsPreorderItem = variant.is_preorder_item !== undefined
+      ? Boolean(variant.is_preorder_item)
+      : (vActive && vStock <= 0 && isPreorder)
+    const vStockLabel = variant.stock_label ?? (
+      !vActive ? 'Nonaktif' : vStock > 0 ? 'Tersedia' : isPreorder ? 'Pre-Order' : 'Stok Habis'
+    )
+
+    return {
+      ...variant,
+      name: variant.name ?? variant.nama ?? 'Standar',
+      price: Number(variant.price ?? price),
+      stock: vStock,
+      is_active: vActive,
+      stock_label: vStockLabel,
+      is_preorder_item: vIsPreorderItem,
+      preorder_estimate_days: vIsPreorderItem ? (variant.preorder_estimate_days ?? preorderEstimateDays) : null,
+    }
+  })
 
   const stock = Number(
     product.stock ?? product.total_stock ?? product.stock_available ??

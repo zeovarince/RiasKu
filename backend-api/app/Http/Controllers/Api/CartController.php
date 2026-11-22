@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Keranjang;
 use App\Models\KeranjangItem;
 use App\Models\Produk;
-use App\Models\ProdukVarian;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,6 +16,14 @@ class CartController extends Controller
         $produk = $item->produk;
         $varian = $item->varian;
         $unitPrice = $produk ? (int) ($produk->retail_price ?? 0) : 0;
+        $variantStock = $varian ? (int) $varian->stock : ($produk ? (int) $produk->total_stock : 0);
+        $isActiveVariant = $varian ? (bool) $varian->is_active : true;
+        $isPreorderItem = $produk
+            ? ((bool) $produk->is_active && $isActiveVariant && $variantStock <= 0 && (bool) $produk->is_preorder)
+            : false;
+        $stockLabel = $varian
+            ? $varian->resolveStockLabel((bool) $produk?->is_preorder)
+            : ($produk?->stock_label ?? 'Stok Habis');
 
         return [
             'id' => $item->id,
@@ -25,6 +32,9 @@ class CartController extends Controller
             'variant_id' => $item->produk_varian_id,
             'quantity' => (int) $item->quantity,
             'unit_price' => $unitPrice,
+            'is_preorder_item' => $isPreorderItem,
+            'preorder_estimate_days' => $isPreorderItem ? $produk?->preorder_estimate_days : null,
+            'stock_label' => $stockLabel,
             'product' => $produk ? [
                 'id' => $produk->id,
                 'sku' => $produk->sku,
@@ -32,18 +42,23 @@ class CartController extends Controller
                 'name' => $produk->name,
                 'price' => $unitPrice,
                 'stock' => $produk->total_stock,
+                'stock_label' => $produk->stock_label,
                 'image_url' => $produk->image_url,
                 'category' => $produk->kategori?->slug ?? 'uncategorized',
                 'categoryLabel' => $produk->kategori?->name ?? 'Lainnya',
                 'art' => $produk->art,
                 'type' => $produk->type,
                 'is_preorder' => (bool) $produk->is_preorder,
+                'preorder_estimate_days' => $produk->preorder_estimate_days,
             ] : null,
             'variant' => $varian ? [
                 'id' => $varian->id,
                 'name' => $varian->name,
                 'stock' => (int) $varian->stock,
                 'price' => $unitPrice,
+                'stock_label' => $stockLabel,
+                'is_preorder_item' => $isPreorderItem,
+                'preorder_estimate_days' => $isPreorderItem ? $produk?->preorder_estimate_days : null,
             ] : null,
         ];
     }
@@ -80,7 +95,7 @@ class CartController extends Controller
 
         $product = Produk::with(['kategori', 'activeVarians'])->findOrFail($validated['product_id']);
 
-        if (!$product->is_active) {
+        if (! $product->is_active) {
             return response()->json([
                 'message' => 'Produk tidak tersedia atau sedang dinonaktifkan.',
             ], 422);
@@ -91,7 +106,7 @@ class CartController extends Controller
 
         if ($variantId) {
             $variant = $product->activeVarians->firstWhere('id', $variantId);
-            if (!$variant) {
+            if (! $variant) {
                 return response()->json([
                     'message' => 'Varian yang dipilih tidak valid untuk produk ini.',
                 ], 422);
@@ -103,11 +118,18 @@ class CartController extends Controller
         }
 
         $requestedQty = max(1, (int) ($validated['quantity'] ?? 1));
-        $maxStock = $variant ? $variant->stock : $product->total_stock;
+        $maxStock = $variant ? (int) $variant->stock : (int) $product->total_stock;
+        $isVariantPreorder = $maxStock <= 0 && (bool) $product->is_preorder;
 
-        if (!$product->is_preorder && $maxStock <= 0) {
+        if (! $isVariantPreorder && $maxStock <= 0) {
             return response()->json([
                 'message' => 'Stok produk ini sedang habis.',
+            ], 422);
+        }
+
+        if ($isVariantPreorder && $requestedQty > 99) {
+            return response()->json([
+                'message' => 'Jumlah Pre-Order maksimal 99 pcs per pesanan.',
             ], 422);
         }
 
@@ -119,13 +141,15 @@ class CartController extends Controller
 
         if ($item) {
             $newQuantity = $item->quantity + $requestedQty;
-            if (!$product->is_preorder && $newQuantity > $maxStock) {
+            if ($isVariantPreorder) {
+                $newQuantity = min(99, $newQuantity);
+            } elseif ($newQuantity > $maxStock) {
                 $newQuantity = max($item->quantity, $maxStock);
             }
             $item->quantity = $newQuantity;
             $item->save();
         } else {
-            $initialQty = $product->is_preorder ? $requestedQty : min($requestedQty, max(1, $maxStock));
+            $initialQty = $isVariantPreorder ? min(99, $requestedQty) : min($requestedQty, max(1, $maxStock));
             $item = KeranjangItem::create([
                 'keranjang_id' => $cart->id,
                 'produk_id' => $product->id,
@@ -134,7 +158,7 @@ class CartController extends Controller
             ]);
         }
 
-        $item->load(['produk.kategori', 'produk.primaryFoto', 'varian']);
+        $item->load(['produk.kategori', 'produk.primaryFoto', 'produk.activeVarians', 'varian']);
 
         return response()->json([
             'message' => 'Item berhasil ditambahkan ke keranjang.',
@@ -154,19 +178,38 @@ class CartController extends Controller
         $item = KeranjangItem::query()
             ->where('keranjang_id', $cart->id)
             ->where('id', $id)
-            ->with(['produk', 'varian'])
+            ->with(['produk.activeVarians', 'varian'])
             ->first();
 
-        if (!$item) {
+        if (! $item) {
             return response()->json([
                 'message' => 'Item keranjang tidak ditemukan.',
             ], 404);
         }
 
-        $maxStock = $item->varian ? $item->varian->stock : $item->produk->total_stock;
+        if (! $item->produk?->is_active || ($item->produk_varian_id && ! $item->varian?->is_active)) {
+            return response()->json([
+                'message' => 'Produk atau varian sudah tidak tersedia.',
+            ], 422);
+        }
+
+        $maxStock = $item->varian ? (int) $item->varian->stock : (int) $item->produk->total_stock;
+        $isVariantPreorder = $maxStock <= 0 && (bool) $item->produk->is_preorder;
         $nextQty = (int) $validated['quantity'];
 
-        if (!$item->produk->is_preorder && $nextQty > $maxStock) {
+        if (! $isVariantPreorder && $maxStock <= 0) {
+            return response()->json([
+                'message' => 'Stok produk ini sedang habis.',
+            ], 422);
+        }
+
+        if ($isVariantPreorder && $nextQty > 99) {
+            return response()->json([
+                'message' => 'Jumlah Pre-Order maksimal 99 pcs.',
+            ], 422);
+        }
+
+        if (! $isVariantPreorder && $nextQty > $maxStock) {
             return response()->json([
                 'message' => "Jumlah melebihi stok yang tersedia (maksimal {$maxStock}).",
             ], 422);
@@ -175,7 +218,7 @@ class CartController extends Controller
         $item->quantity = $nextQty;
         $item->save();
 
-        $item->load(['produk.kategori', 'produk.primaryFoto', 'varian']);
+        $item->load(['produk.kategori', 'produk.primaryFoto', 'produk.activeVarians', 'varian']);
 
         return response()->json([
             'message' => 'Jumlah item keranjang berhasil diperbarui.',
@@ -193,7 +236,7 @@ class CartController extends Controller
             ->where('id', $id)
             ->first();
 
-        if (!$item) {
+        if (! $item) {
             return response()->json([
                 'message' => 'Item keranjang tidak ditemukan.',
             ], 404);
