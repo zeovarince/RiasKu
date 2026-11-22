@@ -6,6 +6,9 @@ import { useCartStore } from '@/stores/cart'
 import { useUiStore } from '@/stores/ui'
 import { getProductById } from '@/services/productService'
 import { formatRupiah } from '@/utils/currency'
+import ReviewList from '@/components/ReviewList.vue'
+import ReviewForm from '@/components/ReviewForm.vue'
+import { getProductReviews, createProductReview } from '@/services/reviewService'
 
 const route = useRoute()
 const cart = useCartStore()
@@ -16,6 +19,11 @@ const error = ref('')
 const quantity = ref(1)
 const selectedVariantId = ref('')
 const addedMessage = ref('')
+const reviews = ref([])
+const reviewsLoading = ref(false)
+const reviewSubmitting = ref(false)
+const reviewMessage = ref('')
+const reviewError = ref('')
 
 const variants = computed(() => Array.isArray(product.value?.variants) ? product.value.variants : [])
 const selectedVariant = computed(() => variants.value.find((variant) => String(variant.id) === String(selectedVariantId.value)) || variants.value[0] || null)
@@ -61,7 +69,44 @@ function addToCart() {
   addedMessage.value = `${product.value.name} berhasil ditambahkan ke keranjang.`
 }
 
-watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
+async function loadReviews(id) {
+  reviewsLoading.value = true
+  try {
+    reviews.value = await getProductReviews(id)
+  } catch {
+    reviews.value = []
+  } finally {
+    reviewsLoading.value = false
+  }
+}
+
+async function handleReviewSubmit(payload) {
+  if (!product.value) return
+  reviewSubmitting.value = true
+  reviewMessage.value = ''
+  reviewError.value = ''
+  try {
+    const created = await createProductReview(product.value.id, payload)
+    if (created) {
+      reviews.value = [created, ...reviews.value]
+      reviewMessage.value = 'Terima kasih! Ulasanmu berhasil ditambahkan.'
+    }
+  } catch (err) {
+    reviewError.value = err.message || 'Gagal mengirim ulasan.'
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
+
+watch(
+  () => route.params.id,
+  (id) => {
+    loadProduct(id)
+    loadReviews(id)
+  },
+  { immediate: true }
+)
+
 </script>
 
 <template>
@@ -122,5 +167,38 @@ watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
         <button class="review-link" type="button" @click="ui.openModal('review', { product })">☆ Tulis ulasan produk ini</button>
       </div>
     </div>
+    <div v-if="product" id="product-reviews" class="product-reviews-section">
+      <h2>Rating &amp; Ulasan Pembeli</h2>
+      <p v-if="reviewMessage" class="form-notice" role="status">{{ reviewMessage }}</p>
+      <p v-if="reviewError" class="form-error">{{ reviewError }}</p>
+      <div class="product-reviews-grid">
+        <ReviewList :reviews="reviews" :loading="reviewsLoading" />
+        <ReviewForm :submitting="reviewSubmitting" @submit="handleReviewSubmit" />
+      </div>
+    </div>
   </section>
 </template>
+<style scoped>
+.product-reviews-section {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid #ece7e9;
+}
+
+.product-reviews-section h2 {
+  margin: 0 0 1.25rem;
+}
+
+.product-reviews-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .product-reviews-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
