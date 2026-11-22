@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -34,7 +35,17 @@ class Pelanggan extends Authenticatable
         return (string) $this->password_hash;
     }
 
+    public function keranjang(): HasOne
+    {
+        return $this->hasOne(Keranjang::class, 'pelanggan_id');
+    }
+
     public function pesanan(): HasMany
+    {
+        return $this->hasMany(Pesanan::class, 'pelanggan_id');
+    }
+
+    public function pesanans(): HasMany
     {
         return $this->hasMany(Pesanan::class, 'pelanggan_id');
     }

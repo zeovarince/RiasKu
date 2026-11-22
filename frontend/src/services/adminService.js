@@ -33,6 +33,7 @@ export const adminService = {
   orders: (params = {}) => dashboardApi.get('/orders', { params }),
   orderDetail: (id) => dashboardApi.get(`/orders/${id}`),
   updateOrderStatus: (id, payload) => dashboardApi.patch(`/orders/${id}/status`, payload),
+  confirmCodPayment: (id, payload = {}) => dashboardApi.post(`/orders/${id}/confirm-cod-payment`, payload),
   incomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
   directSales: (params = {}) => dashboardApi.get('/sales/direct', { params }),
   monthlyReport: (params = {}) => dashboardApi.get('/reports/monthly', { params }),

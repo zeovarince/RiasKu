@@ -15,7 +15,8 @@ class ProdukController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Produk::with(['kategori', 'varians', 'fotos', 'primaryFoto']);
+        $query = Produk::with(['kategori', 'varians', 'fotos', 'primaryFoto'])
+            ->withSum(['activeVarians as active_stock_sum'], 'stock');
 
         if ($request->filled('q') || $request->filled('search')) {
             $keyword = $request->input('q') ?? $request->input('search');
@@ -34,18 +35,12 @@ class ProdukController extends Controller
             $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
         }
 
+        if ($request->filled('stock_label')) {
+            $query->filterStockLabel((string) $request->input('stock_label'));
+        }
+
         $perPage = max(1, min(100, (int) $request->input('per_page', 15)));
         $paginator = $query->latest('id')->paginate($perPage);
-
-        // Filter stock_label if requested (calculated attribute)
-        if ($request->filled('stock_label')) {
-            $expectedLabel = $request->input('stock_label');
-            $filteredItems = $paginator->getCollection()->filter(function (Produk $p) use ($expectedLabel): bool {
-                return strcasecmp($p->stock_label, $expectedLabel) === 0;
-            })->values();
-
-            $paginator->setCollection($filteredItems);
-        }
 
         return response()->json([
             'message' => 'Daftar produk berhasil diambil.',
@@ -102,7 +97,7 @@ class ProdukController extends Controller
 
         // Aturan Pre-Order
         if ($isPreorder) {
-            if (!$estimateDays || $estimateDays < 1 || $estimateDays > 6) {
+            if (! $estimateDays || $estimateDays < 1 || $estimateDays > 6) {
                 throw ValidationException::withMessages([
                     'preorder_estimate_days' => ['Estimasi Pre-Order wajib diisi antara 1 sampai 6 hari bila Pre-Order aktif.'],
                 ]);
@@ -112,20 +107,20 @@ class ProdukController extends Controller
         }
 
         // Aturan Harga Pack: wajib di antara modal dan eceran
-        if (!empty($validated['pack_price'])) {
+        if (! empty($validated['pack_price'])) {
             $packPrice = (int) $validated['pack_price'];
             if ($packPrice <= $basePrice || $packPrice >= $retailPrice) {
                 throw ValidationException::withMessages([
                     'pack_price' => [
-                        'Harga pack per pcs harus berada di antara harga modal (Rp' . number_format($basePrice, 0, ',', '.') .
-                        ') dan harga eceran (Rp' . number_format($retailPrice, 0, ',', '.') . ').',
+                        'Harga pack per pcs harus berada di antara harga modal (Rp'.number_format($basePrice, 0, ',', '.').
+                        ') dan harga eceran (Rp'.number_format($retailPrice, 0, ',', '.').').',
                     ],
                 ]);
             }
         }
 
         // Cek duplikasi nama varian
-        if (!empty($validated['varians'])) {
+        if (! empty($validated['varians'])) {
             $names = array_map(fn ($v) => strtolower(trim($v['name'])), $validated['varians']);
             if (count($names) !== count(array_unique($names))) {
                 throw ValidationException::withMessages([
@@ -143,7 +138,7 @@ class ProdukController extends Controller
 
             $produk = Produk::create($validated);
 
-            if (!empty($variansData)) {
+            if (! empty($variansData)) {
                 foreach ($variansData as $item) {
                     $produk->varians()->create([
                         'name' => trim($item['name']),
@@ -164,7 +159,8 @@ class ProdukController extends Controller
             return $produk;
         });
 
-        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto']);
+        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto'])
+            ->loadSum(['activeVarians as active_stock_sum'], 'stock');
 
         $warnings = [];
         if ($produk->price_warning) {
@@ -180,7 +176,8 @@ class ProdukController extends Controller
 
     public function show(Produk $produk): JsonResponse
     {
-        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto']);
+        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto'])
+            ->loadSum(['activeVarians as active_stock_sum'], 'stock');
 
         return response()->json([
             'message' => 'Detail produk berhasil diambil.',
@@ -206,6 +203,14 @@ class ProdukController extends Controller
             'bpom_number' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
+            'varians' => ['nullable', 'array', 'min:1'],
+            'varians.*.id' => ['nullable', 'integer', 'distinct'],
+            'varians.*.name' => ['required_with:varians', 'string', 'max:100'],
+            'varians.*.stock' => ['required_with:varians', 'integer', 'min:0'],
+            'varians.*.original_stock' => ['nullable', 'integer', 'min:0'],
+            'varians.*.is_active' => ['nullable', 'boolean'],
+            'initial_stock' => ['nullable', 'integer', 'min:0'],
+            'original_initial_stock' => ['nullable', 'integer', 'min:0'],
         ], [
             'kategori_id.required' => 'Kategori produk wajib dipilih.',
             'kategori_id.exists' => 'Kategori yang dipilih tidak valid.',
@@ -224,7 +229,7 @@ class ProdukController extends Controller
 
         // Aturan Pre-Order
         if ($isPreorder) {
-            if (!$estimateDays || $estimateDays < 1 || $estimateDays > 6) {
+            if (! $estimateDays || $estimateDays < 1 || $estimateDays > 6) {
                 throw ValidationException::withMessages([
                     'preorder_estimate_days' => ['Estimasi Pre-Order wajib diisi antara 1 sampai 6 hari bila Pre-Order aktif.'],
                 ]);
@@ -234,21 +239,52 @@ class ProdukController extends Controller
         }
 
         // Aturan Harga Pack: wajib di antara modal dan eceran
-        if (!empty($validated['pack_price'])) {
+        if (! empty($validated['pack_price'])) {
             $packPrice = (int) $validated['pack_price'];
             if ($packPrice <= $basePrice || $packPrice >= $retailPrice) {
                 throw ValidationException::withMessages([
                     'pack_price' => [
-                        'Harga pack per pcs harus berada di antara harga modal (Rp' . number_format($basePrice, 0, ',', '.') .
-                        ') dan harga eceran (Rp' . number_format($retailPrice, 0, ',', '.') . ').',
+                        'Harga pack per pcs harus berada di antara harga modal (Rp'.number_format($basePrice, 0, ',', '.').
+                        ') dan harga eceran (Rp'.number_format($retailPrice, 0, ',', '.').').',
                     ],
                 ]);
             }
         }
 
+        // Cek duplikasi nama varian
+        if (! empty($validated['varians'])) {
+            $names = array_map(fn ($v) => strtolower(trim($v['name'])), $validated['varians']);
+            if (count($names) !== count(array_unique($names))) {
+                throw ValidationException::withMessages([
+                    'varians' => ['Nama varian harus unik dalam satu produk.'],
+                ]);
+            }
+        }
+
+        $variansData = $validated['varians'] ?? null;
+        $hasVarians = $request->has('varians') && is_array($variansData) && count($variansData) > 0;
+        $hasInitialStock = ! $hasVarians && $request->has('initial_stock') && $validated['initial_stock'] !== null;
+        $initialStock = $hasInitialStock ? (int) $validated['initial_stock'] : null;
+        $originalInitialStock = array_key_exists('original_initial_stock', $validated) && $validated['original_initial_stock'] !== null
+            ? (int) $validated['original_initial_stock']
+            : null;
+
+        unset($validated['varians'], $validated['initial_stock'], $validated['original_initial_stock']);
         $validated['is_preorder'] = $isPreorder;
-        $produk->update($validated);
-        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto']);
+
+        DB::transaction(function () use ($produk, $validated, $hasVarians, $variansData, $hasInitialStock, $initialStock, $originalInitialStock): void {
+            $produk->update($validated);
+
+            if ($hasVarians) {
+                $this->syncCustomVariants($produk, $variansData);
+            } elseif ($hasInitialStock) {
+                $this->syncStandardVariant($produk, (int) $initialStock, $originalInitialStock);
+            }
+        }, 3);
+
+        $produk->refresh();
+        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto'])
+            ->loadSum(['activeVarians as active_stock_sum'], 'stock');
 
         $warnings = [];
         if ($produk->price_warning) {
@@ -266,10 +302,11 @@ class ProdukController extends Controller
     {
         $newStatus = $request->has('is_active')
             ? filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN)
-            : !$produk->is_active;
+            : ! $produk->is_active;
 
         $produk->update(['is_active' => $newStatus]);
-        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto']);
+        $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto'])
+            ->loadSum(['activeVarians as active_stock_sum'], 'stock');
 
         $statusText = $newStatus ? 'diaktifkan' : 'dinonaktifkan';
 
@@ -277,5 +314,96 @@ class ProdukController extends Controller
             'message' => "Produk berhasil {$statusText}.",
             'data' => $produk,
         ]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $variansData
+     */
+    private function syncCustomVariants(Produk $produk, array $variansData): void
+    {
+        $existing = $produk->varians()->orderBy('id')->lockForUpdate()->get();
+        $keptIds = [];
+
+        foreach ($variansData as $item) {
+            $trimmedName = trim((string) $item['name']);
+            $lowerName = strtolower($trimmedName);
+            $requestedStock = max(0, (int) ($item['stock'] ?? 0));
+            $originalStock = array_key_exists('original_stock', $item) && $item['original_stock'] !== null
+                ? max(0, (int) $item['original_stock'])
+                : null;
+            $isActive = array_key_exists('is_active', $item)
+                ? filter_var($item['is_active'], FILTER_VALIDATE_BOOLEAN)
+                : true;
+
+            $variant = null;
+            if (! empty($item['id'])) {
+                $variant = $existing->firstWhere('id', (int) $item['id']);
+            }
+            if (! $variant) {
+                $variant = $existing->first(
+                    fn (ProdukVarian $v): bool => strtolower(trim($v->name)) === $lowerName
+                );
+            }
+
+            if ($variant) {
+                $conflict = $existing->first(
+                    fn (ProdukVarian $v): bool => $v->id !== $variant->id && strtolower(trim($v->name)) === $lowerName
+                );
+                if ($conflict) {
+                    $conflict->update(['name' => $conflict->name.' (arsip-'.$conflict->id.')', 'is_active' => false]);
+                }
+
+                // Hindari lost-update stok bila ada checkout paralel antara form dibuka dan disimpan.
+                $resolvedStock = $originalStock !== null
+                    ? max(0, (int) $variant->stock + ($requestedStock - $originalStock))
+                    : $requestedStock;
+
+                $variant->update([
+                    'name' => $trimmedName,
+                    'stock' => $resolvedStock,
+                    'is_active' => $isActive,
+                ]);
+                $keptIds[] = $variant->id;
+            } else {
+                $created = $produk->varians()->create([
+                    'name' => $trimmedName,
+                    'stock' => $requestedStock,
+                    'is_active' => $isActive,
+                ]);
+                $keptIds[] = $created->id;
+            }
+        }
+
+        if ($keptIds !== []) {
+            $produk->varians()->whereNotIn('id', $keptIds)->update(['is_active' => false]);
+        }
+    }
+
+    private function syncStandardVariant(Produk $produk, int $stock, ?int $originalStock = null): void
+    {
+        $existing = $produk->varians()->orderBy('id')->lockForUpdate()->get();
+        $standard = $existing->first(
+            fn (ProdukVarian $v): bool => strtolower(trim($v->name)) === 'standar'
+        ) ?? ($existing->count() === 1 ? $existing->first() : null);
+
+        if ($standard) {
+            $resolvedStock = $originalStock !== null
+                ? max(0, (int) $standard->stock + (max(0, $stock) - max(0, $originalStock)))
+                : max(0, $stock);
+
+            $standard->update([
+                'name' => 'Standar',
+                'stock' => $resolvedStock,
+                'is_active' => true,
+            ]);
+            $produk->varians()->where('id', '!=', $standard->id)->update(['is_active' => false]);
+        } else {
+            $created = $produk->varians()->create([
+                'name' => 'Standar',
+                'stock' => max(0, $stock),
+                'is_active' => true,
+            ]);
+            $produk->varians()->where('id', '!=', $created->id)->update(['is_active' => false]);
+        }
     }
 }

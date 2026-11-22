@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 import { useCartStore } from '@/stores/cart'
 import { useUiStore } from '@/stores/ui'
@@ -7,8 +8,52 @@ const props = defineProps({ product: { type: Object, required: true } })
 const cart = useCartStore()
 const ui = useUiStore()
 
+const variants = computed(() => (Array.isArray(props.product.variants) ? props.product.variants : []))
+
+const defaultVariant = computed(() => {
+  return variants.value.find((v) => Number(v.stock ?? 0) > 0) || variants.value[0] || null
+})
+
+const stockCount = computed(() => Number(props.product.stock ?? props.product.total_stock ?? 0))
+
+const isPreorderProduct = computed(() => {
+  if (props.product.stock_label === 'Pre-Order') return true
+  if (props.product.stock_label === 'Tersedia' || props.product.stock_label === 'Stok Habis') return false
+  return stockCount.value <= 0 && Boolean(props.product.is_preorder)
+})
+
+const canQuickAdd = computed(() => {
+  if (stockCount.value > 0) return true
+  return isPreorderProduct.value
+})
+
+const stockBadgeText = computed(() => {
+  if (stockCount.value > 0) {
+    return stockCount.value <= 3 ? `Tersedia · Sisa ${stockCount.value}` : 'Tersedia'
+  }
+  if (isPreorderProduct.value) {
+    return props.product.preorder_estimate_days
+      ? `Pre-Order · Est. ${props.product.preorder_estimate_days} Hari`
+      : 'Pre-Order'
+  }
+  return 'Stok Habis'
+})
+
+const stockPillClass = computed(() => {
+  if (stockCount.value > 0) return 'pill-ready'
+  if (isPreorderProduct.value) return 'pill-preorder'
+  return 'pill-empty'
+})
+
+const quickAddLabel = computed(() => {
+  if (stockCount.value > 0) return '＋ Keranjang'
+  if (isPreorderProduct.value) return 'Pre-Order'
+  return 'Stok Habis'
+})
+
 function addProduct() {
-  cart.addItem(props.product, 1, props.product.variants?.[0] || null)
+  if (!canQuickAdd.value) return
+  cart.addItem(props.product, 1, defaultVariant.value)
 }
 </script>
 
@@ -21,6 +66,9 @@ function addProduct() {
     </div>
     <div class="product-meta">{{ product.code }}</div>
     <RouterLink :to="`/products/${product.id}`" class="product-name">{{ product.name }}</RouterLink>
+    <div class="product-stock-pill-row">
+      <span class="stock-pill" :class="stockPillClass">{{ stockBadgeText }}</span>
+    </div>
     <div class="product-rating"><span>★★★★★</span> {{ product.rating }} ({{ product.reviewCount }} {{ product.reviewLabel || 'Ulasan' }})</div>
     <button class="review-link" type="button" @click="ui.openModal('review', { product })">Lihat ulasan pelanggan</button>
     <div class="product-price">{{ product.priceLabel }}</div>
@@ -30,10 +78,10 @@ function addProduct() {
       <button
         class="product-action"
         type="button"
-        :disabled="Number(product.stock ?? 0) <= 0 && product.stock_label !== 'Pre-Order'"
+        :disabled="!canQuickAdd"
         @click="addProduct"
       >
-        {{ product.stock_label === 'Pre-Order' ? 'Pre-Order' : (Number(product.stock ?? 0) > 0 ? '＋ Keranjang' : 'Stok Habis') }}
+        {{ quickAddLabel }}
       </button>
     </div>
   </article>

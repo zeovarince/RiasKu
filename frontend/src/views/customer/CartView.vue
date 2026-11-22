@@ -1,10 +1,25 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 import { useCartStore } from '@/stores/cart'
+import { useAuthStore } from '@/stores/auth'
 import { formatRupiah } from '@/utils/currency'
 
 const cart = useCartStore()
+const auth = useAuthStore()
+
+const isCustomer = computed(() => {
+  return auth.isAuthenticated && auth.user?.account_type === 'pelanggan'
+})
+
+const hasPreorderItems = computed(() => cart.items.some((item) => Boolean(item.is_preorder_item)))
+const maxPreorderDays = computed(() => {
+  const days = cart.items
+    .filter((item) => Boolean(item.is_preorder_item))
+    .map((item) => Number(item.preorder_estimate_days || 0))
+    .filter((d) => d > 0)
+  return days.length ? Math.max(...days) : null
+})
 
 onMounted(() => cart.hydrateCart())
 </script>
@@ -29,6 +44,15 @@ onMounted(() => cart.hydrateCart())
             <RouterLink :to="`/products/${item.id}`" class="cart-product-name">{{ item.name }}</RouterLink>
             <small>{{ item.code || item.sku || `Produk #${item.id}` }}</small>
             <small v-if="item.variantName">Varian: {{ item.variantName }}</small>
+            <span v-if="item.is_preorder_item" class="stock-pill pill-preorder">
+              Pre-Order{{ item.preorder_estimate_days ? ` · Est. ${item.preorder_estimate_days} hari` : '' }}
+            </span>
+            <span v-else-if="Number(item.stock ?? 0) > 0" class="stock-pill pill-ready">
+              Tersedia (Stok {{ item.stock }})
+            </span>
+            <span v-else class="stock-pill pill-empty">
+              Stok Habis
+            </span>
             <strong>{{ formatRupiah(item.price) }}</strong>
           </div>
           <div class="cart-quantity-wrap">
@@ -36,7 +60,7 @@ onMounted(() => cart.hydrateCart())
             <div class="quantity-control">
               <button type="button" :aria-label="`Kurangi ${item.name}`" :disabled="item.quantity <= 1" @click="cart.updateQuantity(item.cartKey, item.quantity - 1)">−</button>
               <span>{{ item.quantity }}</span>
-              <button type="button" :aria-label="`Tambah ${item.name}`" :disabled="item.quantity >= (item.stock ?? 9999)" @click="cart.updateQuantity(item.cartKey, item.quantity + 1)">+</button>
+              <button type="button" :aria-label="`Tambah ${item.name}`" :disabled="item.quantity >= (item.is_preorder_item ? 99 : (item.stock ?? 9999))" @click="cart.updateQuantity(item.cartKey, item.quantity + 1)">+</button>
             </div>
           </div>
           <div class="cart-line-total">
@@ -58,8 +82,29 @@ onMounted(() => cart.hydrateCart())
         <div class="summary-line"><span>Subtotal produk</span><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
         <div class="summary-line"><span>Pengiriman</span><span>Dihitung saat checkout</span></div>
         <div class="summary-line summary-total"><strong>Total sementara</strong><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
-        <RouterLink to="/checkout" class="button button-primary cart-checkout-button">Lanjut ke Checkout →</RouterLink>
-        <p class="cart-cod-note">COD tersedia untuk area Surabaya. Metode pengiriman dan biaya akhir akan dikonfirmasi pada tahap checkout.</p>
+        <p v-if="hasPreorderItems" class="cart-po-summary-note">
+          ⏳ Keranjang berisi produk <strong>Pre-Order</strong>. Pesanan akan dikirim serentak setelah proses penyiapan{{ maxPreorderDays ? ` (maksimal ${maxPreorderDays} hari kerja)` : '' }}.
+        </p>
+        <RouterLink
+          v-if="isCustomer"
+          to="/checkout"
+          class="button button-primary cart-checkout-button"
+        >
+          Lanjut ke Checkout &amp; COD →
+        </RouterLink>
+        <RouterLink
+          v-else
+          to="/auth/login?redirect=/checkout"
+          class="button button-primary cart-checkout-button"
+        >
+          Masuk untuk Checkout &amp; COD →
+        </RouterLink>
+        <p v-if="!isCustomer" class="cart-guest-note">
+          🔒 Masuk atau daftar akun terlebih dahulu untuk melanjutkan ke tahap checkout dan pembayaran COD Surabaya.
+        </p>
+        <p v-else class="cart-cod-note">
+          COD tersedia khusus wilayah Kota Surabaya. Metode pembayaran online (QRIS, VA, E-Wallet) tersedia untuk seluruh Indonesia.
+        </p>
       </aside>
     </div>
 
@@ -73,3 +118,16 @@ onMounted(() => cart.hydrateCart())
     </div>
   </section>
 </template>
+
+<style scoped>
+.cart-guest-note {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #9d174d;
+  background: #fdf2f8;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px dashed #f472b6;
+  line-height: 1.45;
+}
+</style>

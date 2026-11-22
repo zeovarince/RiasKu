@@ -13,13 +13,15 @@ class ProdukController extends Controller
     {
         $query = Produk::query()
             ->where('is_active', true)
-            ->with(['kategori', 'activeVarians', 'primaryFoto']);
+            ->with(['kategori', 'activeVarians', 'primaryFoto'])
+            ->withSum(['activeVarians as active_stock_sum'], 'stock');
 
         if ($search = trim((string) ($request->query('q') ?? $request->query('search')))) {
             $query->where(function ($sub) use ($search) {
                 $sub->where('name', 'like', "%{$search}%")
                     ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%");
+                    ->orWhere('sku', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -32,6 +34,11 @@ class ProdukController extends Controller
                         });
                 });
             }
+        }
+
+        $stockFilter = $request->query('stock_label') ?? $request->query('stock_status');
+        if ($stockFilter !== null && trim((string) $stockFilter) !== '') {
+            $query->filterStockLabel((string) $stockFilter);
         }
 
         $sort = (string) $request->query('sort', 'recommended');
@@ -56,6 +63,7 @@ class ProdukController extends Controller
 
         if ($request->has('page')) {
             $paginated = $query->paginate($perPage);
+            collect($paginated->items())->each(fn (Produk $item) => $item->makeHidden(['base_price', 'price_warning']));
 
             return response()->json([
                 'message' => 'Daftar produk berhasil dimuat.',
@@ -71,6 +79,7 @@ class ProdukController extends Controller
 
         $limit = $request->has('per_page') ? $perPage : ($request->query('featured') ? 4 : 50);
         $products = $query->limit($limit)->get();
+        $products->each(fn (Produk $item) => $item->makeHidden(['base_price', 'price_warning']));
 
         return response()->json([
             'message' => 'Daftar produk berhasil dimuat.',
@@ -83,13 +92,16 @@ class ProdukController extends Controller
         $product = Produk::query()
             ->where('is_active', true)
             ->with(['kategori', 'activeVarians', 'fotos', 'primaryFoto'])
+            ->withSum(['activeVarians as active_stock_sum'], 'stock')
             ->find($id);
 
-        if (!$product) {
+        if (! $product) {
             return response()->json([
                 'message' => 'Produk tidak ditemukan atau sedang tidak aktif.',
             ], 404);
         }
+
+        $product->makeHidden(['base_price', 'price_warning']);
 
         return response()->json([
             'message' => 'Detail produk berhasil dimuat.',

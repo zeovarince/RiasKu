@@ -5,10 +5,12 @@ import AuthPage from '@/components/AuthPage.vue'
 import GoogleSignInButton from '@/components/GoogleSignInButton.vue'
 import { login, loginWithGoogle } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const cart = useCartStore()
 const email = ref('')
 const password = ref('')
 const isLoading = ref(false)
@@ -33,7 +35,13 @@ async function completeLogin(request) {
   errorMessage.value = ''
   fieldErrors.value = {}
   try {
-    auth.setSession(await request())
+    const session = await request()
+    auth.setSession(session)
+    if (session.user?.account_type === 'admin') {
+      await router.replace('/admin/dashboard')
+      return
+    }
+    await cart.hydrateCart().catch(() => {})
     await router.replace(destination())
   } catch (error) {
     showRequestError(error)

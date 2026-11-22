@@ -8,6 +8,7 @@ use App\Models\Pesanan;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
 use App\Models\ZonaPengiriman;
+use App\Services\OrderStatusService;
 use App\Services\ShippingCostService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -102,7 +103,24 @@ class CheckoutController extends Controller
             $shippingItems = [];
             $subtotal = 0;
 
+            $indexedItems = [];
             foreach ($validated['items'] as $index => $item) {
+                $indexedItems[] = ['index' => $index, 'item' => $item];
+            }
+
+            // Urutkan deterministik sebelum lockForUpdate agar urutan keranjang berbeda tidak memicu deadlock MySQL.
+            usort($indexedItems, static function (array $a, array $b): int {
+                $prodCmp = ((int) $a['item']['product_id']) <=> ((int) $b['item']['product_id']);
+                if ($prodCmp !== 0) {
+                    return $prodCmp;
+                }
+
+                return ((int) $a['item']['variant_id']) <=> ((int) $b['item']['variant_id']);
+            });
+
+            foreach ($indexedItems as $entry) {
+                $index = $entry['index'];
+                $item = $entry['item'];
                 $product = Produk::query()
                     ->whereKey($item['product_id'])
                     ->lockForUpdate()
@@ -127,21 +145,35 @@ class CheckoutController extends Controller
                 }
 
                 $quantity = (int) $item['quantity'];
-                if ($variant->stock < $quantity) {
-                    throw ValidationException::withMessages([
-                        "items.{$index}.quantity" => ["Stok {$product->name} ({$variant->name}) tidak mencukupi."],
-                    ]);
+                $availableStock = (int) $variant->stock;
+                $isLinePreorder = $availableStock <= 0 && (bool) $product->is_preorder;
+
+                if ($isLinePreorder) {
+                    if ($quantity > 99) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.quantity" => ["Jumlah Pre-Order {$product->name} ({$variant->name}) maksimal 99 pcs."],
+                        ]);
+                    }
+                    $stockDeducted = false;
+                } else {
+                    if ($availableStock < $quantity) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.quantity" => ["Stok {$product->name} ({$variant->name}) tidak mencukupi."],
+                        ]);
+                    }
+                    $variant->decrement('stock', $quantity);
+                    $stockDeducted = true;
                 }
 
                 $unitPrice = (int) $product->retail_price;
                 $lineTotal = $unitPrice * $quantity;
                 $subtotal += $lineTotal;
-                $shippingItems[] = [
+                $shippingItems[$index] = [
                     'product' => $product,
                     'quantity' => $quantity,
                 ];
 
-                $orderItems[] = [
+                $orderItems[$index] = [
                     'produk_id' => $product->id,
                     'produk_varian_id' => $variant->id,
                     'product_name' => $product->name,
@@ -150,10 +182,21 @@ class CheckoutController extends Controller
                     'unit_price' => $unitPrice,
                     'quantity' => $quantity,
                     'line_total' => $lineTotal,
+                    'is_preorder' => $isLinePreorder,
+                    'preorder_estimate_days' => $isLinePreorder ? $product->preorder_estimate_days : null,
+                    'stock_deducted' => $stockDeducted,
                 ];
-
-                $variant->decrement('stock', $quantity);
             }
+
+            ksort($shippingItems);
+            $shippingItems = array_values($shippingItems);
+            ksort($orderItems);
+            $orderItems = array_values($orderItems);
+
+            $hasPreorderItems = collect($orderItems)->contains(fn (array $item): bool => (bool) $item['is_preorder']);
+            $preorderEstimateDays = $hasPreorderItems
+                ? (int) collect($orderItems)->filter(fn (array $item): bool => (bool) $item['is_preorder'])->max('preorder_estimate_days')
+                : null;
 
             $weightGrams = $shipping->hitungBerat($shippingItems);
             $quote = $shipping->hitungOngkir($subtotal, $weightGrams, $zone);
@@ -177,6 +220,8 @@ class CheckoutController extends Controller
                 'payment_method' => $validated['payment_method'],
                 'payment_status' => $validated['payment_method'] === 'online' ? 'pending' : 'unpaid',
                 'status' => 'pending',
+                'has_preorder_items' => $hasPreorderItems,
+                'preorder_estimate_days' => $preorderEstimateDays ?: null,
                 'subtotal' => $subtotal,
                 'shipping_cost' => $shippingCost,
                 'total' => $subtotal + $shippingCost,
@@ -193,11 +238,20 @@ class CheckoutController extends Controller
             ]);
 
             $order->items()->createMany($orderItems);
+            app(OrderStatusService::class)->recordInitialLog(
+                $order,
+                'pelanggan',
+                $customer->id,
+                $validated['name'],
+                $validated['payment_method'] === 'cod'
+                    ? 'Pesanan COD dibuat dan sedang diproses.'
+                    : 'Pesanan dibuat, menunggu pembayaran.',
+            );
             $order->setAttribute('packaging_weight_grams', $quote['packaging_weight_grams']);
             $order->setAttribute('billable_weight_kg', $selectedOption['billable_weight_kg']);
 
-            return $order->load(['items', 'zona']);
-        });
+            return $order->load(['items', 'zona', 'statusLogs']);
+        }, 3);
 
         return response()->json([
             'message' => 'Pesanan berhasil dibuat.',

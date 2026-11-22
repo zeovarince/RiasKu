@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\AdminAuthController;
 use App\Http\Controllers\Api\Admin\KategoriController;
+use App\Http\Controllers\Api\Admin\OrderManagementController;
 use App\Http\Controllers\Api\Admin\ProdukController;
 use App\Http\Controllers\Api\Admin\ProdukFotoController;
 use App\Http\Controllers\Api\Admin\ProdukVarianController;
@@ -45,6 +46,12 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     Route::post('/produk/{produk}/foto', [ProdukFotoController::class, 'store']);
     Route::patch('/foto/{foto}', [ProdukFotoController::class, 'update']);
     Route::delete('/foto/{foto}', [ProdukFotoController::class, 'destroy']);
+
+    // Pesanan & Konfirmasi COD (PPL-20)
+    Route::get('/orders', [OrderManagementController::class, 'index']);
+    Route::get('/orders/{id}', [OrderManagementController::class, 'show']);
+    Route::patch('/orders/{id}/status', [OrderManagementController::class, 'updateStatus']);
+    Route::post('/orders/{id}/confirm-cod-payment', [OrderManagementController::class, 'confirmCodPayment']);
 
     // Aliases
     Route::get('/categories', [KategoriController::class, 'index']);
