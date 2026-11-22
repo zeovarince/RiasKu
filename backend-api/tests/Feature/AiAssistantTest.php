@@ -113,8 +113,8 @@ test('PPL-28: uses Gemini API via Http::fake, filters non-existent/inactive reco
 
         return str_contains($request->url(), 'generativelanguage.googleapis.com')
             && $request->hasHeader('x-goog-api-key', 'AIza-test-key-123')
-            && !str_contains((string) $body, '123456')
-            && !str_contains((string) $body, 'Produk Nonaktif Rahasia');
+            && ! str_contains((string) $body, '123456')
+            && ! str_contains((string) $body, 'Produk Nonaktif Rahasia');
     });
 });
 
@@ -265,10 +265,10 @@ test('PPL-28: cascades intra-Gemini models (flash -> flash-lite) on 429 rate lim
                                     'recommended_product_ids' => [$cushion->id],
                                     'follow_up_suggestions' => ['Shade Natural 01 ada?'],
                                 ]),
-                            ]
-                        ]
+                            ],
+                        ],
                     ],
-                ]
+                ],
             ],
         ], 200),
     ]);
@@ -312,7 +312,7 @@ test('PPL-28: executes 3-LLM failover chain (Gemini -> Groq -> OpenRouter) witho
                             'follow_up_suggestions' => ['Cek COD Surabaya'],
                         ]),
                     ],
-                ]
+                ],
             ],
         ], 200),
     ]);
@@ -356,7 +356,7 @@ test('PPL-28: cascades all the way to OpenRouter when both Gemini and Groq fail 
                             'follow_up_suggestions' => ['Ada lip tint PO?'],
                         ]),
                     ],
-                ]
+                ],
             ],
         ], 200),
     ]);
@@ -369,12 +369,12 @@ test('PPL-28: cascades all the way to OpenRouter when both Gemini and Groq fail 
         ->and($orRes->json('data.message.model'))->toBe('meta-llama/llama-3.3-70b-instruct:free');
 
     Http::assertSent(function ($request): bool {
-        if (!str_contains($request->url(), 'openrouter.ai')) {
+        if (! str_contains($request->url(), 'openrouter.ai')) {
             return false;
         }
         $body = (string) json_encode($request->data());
 
-        return !str_contains($body, '123456') && !str_contains($body, 'Produk Nonaktif Rahasia');
+        return ! str_contains($body, '123456') && ! str_contains($body, 'Produk Nonaktif Rahasia');
     });
 });
 
@@ -437,13 +437,13 @@ test('PPL-28: manages multi-session list, rename, delete, isolation, and provide
 
     // Tamu hanya melihat sesi miliknya sendiri dari daftar token, bukan milik owner meskipun memasukkan token owner
     app('auth')->forgetGuards();
-    $guestSessions = $this->getJson('/api/ai/sessions?tokens=' . implode(',', [$g1, $g2, $ownerToken]))->assertOk()->json('data');
+    $guestSessions = $this->getJson('/api/ai/sessions?tokens='.implode(',', [$g1, $g2, $ownerToken]))->assertOk()->json('data');
     $guestSessionTokens = collect($guestSessions)->pluck('session_token')->all();
     expect($guestSessionTokens)->toContain($g1)->toContain($g2)->not->toContain($ownerToken);
 
     // M7: Saat pelanggan lain (other) login dan hanya punya active_token=$g1, token $g2 milik tamu lain TIDAK ikut ter-claim!
     Sanctum::actingAs($other);
-    $claimedList = $this->getJson('/api/ai/sessions?tokens=' . implode(',', [$g1, $g2]) . "&active_token={$g1}")->assertOk()->json('data');
+    $claimedList = $this->getJson('/api/ai/sessions?tokens='.implode(',', [$g1, $g2])."&active_token={$g1}")->assertOk()->json('data');
     $claimedTokens = collect($claimedList)->pluck('session_token')->all();
     expect($claimedTokens)->toContain($g1)->not->toContain($g2);
 
@@ -451,7 +451,7 @@ test('PPL-28: manages multi-session list, rename, delete, isolation, and provide
     app('auth')->forgetGuards();
     $this->patchJson("/api/ai/sessions/{$g2}", ['title' => 'Rekomendasi Pre-Order'])->assertOk();
     $this->deleteJson("/api/ai/sessions/{$g2}")->assertOk()->assertJsonPath('data.deleted', true);
-    $afterDelete = $this->getJson('/api/ai/sessions?tokens=' . $g2)->assertOk()->json('data');
+    $afterDelete = $this->getJson('/api/ai/sessions?tokens='.$g2)->assertOk()->json('data');
     expect($afterDelete)->toBeEmpty();
 });
 
@@ -559,10 +559,10 @@ test('PPL-28 M1, M2 & H3: handles order lookup deterministically without externa
                                     'recommended_product_ids' => [$cushion->id],
                                     'follow_up_suggestions' => ['Cek stok'],
                                 ]),
-                            ]
-                        ]
+                            ],
+                        ],
                     ],
-                ]
+                ],
             ],
         ], 200),
     ]);
@@ -682,10 +682,10 @@ test('PPL-28 N-L2 & N-L4: answers empty-order customer locally without LLM and a
                                         'recommended_product_ids' => [],
                                         'follow_up_suggestions' => ['Cari produk'],
                                     ]),
-                                ]
-                            ]
+                                ],
+                            ],
                         ],
-                    ]
+                    ],
                 ],
             ], 200);
         },

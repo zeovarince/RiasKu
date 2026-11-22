@@ -192,11 +192,10 @@ class AiAssistantService
             'created_at' => now(),
         ]);
 
-        if (empty($session->title)) {
-            $session->title = Str::limit(trim($message), 110);
-        }
-        $session->last_message_at = now();
-        $session->save();
+        $session->update([
+            'title' => $session->title ?: Str::limit(trim($message), 110),
+            'last_message_at' => now(),
+        ]);
 
         $maxHistory = max(2, (int) config('services.ai_assistant.max_history_messages', 10));
         $history = AiChatMessage::query()
@@ -831,7 +830,8 @@ PROMPT;
                 return 'Akun pengguna ini belum memiliki riwayat pesanan di RiasKu.';
             }
 
-            return $recent->map(function (Pesanan $order): string {
+            return $recent->map(function ($order): string {
+                /** @var Pesanan $order */
                 $resi = $order->tracking_number ? " | Resi: `{$order->tracking_number}`" : '';
 
                 return "• Pesanan **{$order->order_code}**: status **{$order->resolvedOrderStatus()}** | bayar **{$order->payment_status}**{$resi} | total **Rp".number_format((int) ($order->total_amount ?? $order->total ?? 0), 0, ',', '.').'**';

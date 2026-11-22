@@ -66,7 +66,7 @@ test('PPL-21: public order tracking masks phone numbers safely, hides detail add
     ])->assertOk();
 
     // Tamu (tanpa Sanctum token) melacak kode pesanan
-    auth()->forgetGuards();
+    app('auth')->forgetGuards();
     $trackRes = $this->getJson("/api/orders/{$orderCode}/track")->assertOk();
 
     expect($trackRes->json('data.order_code'))->toBe($orderCode)
@@ -202,11 +202,11 @@ test('PPL-21 C1: prevents payment IDOR across customers and guards simulateSucce
     $paymentId = $res->json('data.payment.id');
     $orderCode = $res->json('data.order.order_code');
 
-    // Pelanggan B tidak boleh melihat, mensimulasikan, atau menyinkronkan pembayaran milik Pelanggan A
+    // Pelanggan B tidak boleh melihat, mensimulasikan, atau menyinkronkan pembayaran milik Pelanggan A (403 selaras dengan PPL-19)
     Sanctum::actingAs($attacker);
-    $this->getJson("/api/payments/{$paymentId}")->assertNotFound();
-    $this->postJson("/api/payments/{$paymentId}/simulate-pay")->assertNotFound();
-    $this->postJson("/api/payments/{$orderCode}/sync-status")->assertNotFound();
+    $this->getJson("/api/payments/{$paymentId}")->assertForbidden();
+    $this->postJson("/api/payments/{$paymentId}/simulate-pay")->assertForbidden();
+    $this->postJson("/api/payments/{$orderCode}/sync-status")->assertForbidden();
 
     // Pemilik tidak boleh memanggil simulate-pay ketika mode live Midtrans aktif
     Sanctum::actingAs($owner);

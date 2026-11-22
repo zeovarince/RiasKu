@@ -95,13 +95,13 @@ class Pesanan extends Model
         $this->syncPair('shipping_district', 'destination_district');
         $this->syncPair('shipping_postal_code', 'destination_postal_code');
 
-        if ($this->isDirty('shipping_courier') && ! empty($this->shipping_courier)) {
+        if (! $this->isDirty('courier') && empty($this->courier) && ! empty($this->shipping_courier)) {
             $this->courier = $this->shipping_courier;
-        } elseif ($this->isDirty('courier') && ! empty($this->courier)) {
+        } elseif (! $this->isDirty('shipping_courier') && empty($this->shipping_courier) && ! empty($this->courier)) {
             $this->shipping_courier = trim($this->courier.' '.($this->courier_service ?? ''));
-        } elseif (empty($this->courier) && ! empty($this->shipping_courier)) {
+        } elseif ($this->isDirty('shipping_courier') && ! $this->isDirty('courier') && ! empty($this->shipping_courier)) {
             $this->courier = $this->shipping_courier;
-        } elseif (empty($this->shipping_courier) && ! empty($this->courier)) {
+        } elseif ($this->isDirty('courier') && ! $this->isDirty('shipping_courier') && ! empty($this->courier)) {
             $this->shipping_courier = trim($this->courier.' '.($this->courier_service ?? ''));
         }
 

@@ -627,3 +627,135 @@ test('PPL-19: Checkout rejected when stock insufficient', function () {
 
     $response->assertStatus(422);
 });
+
+test('PPL-18 + PPL-19: Unified checkout calculates shipping cost and charges Midtrans with subtotal plus shipping', function () {
+    $zone = \App\Models\ZonaPengiriman::create([
+        'province' => 'Jawa Timur',
+        'city' => 'Sidoarjo',
+        'district' => 'Waru',
+        'postal_code' => '61256',
+        'is_active' => true,
+    ]);
+    \App\Models\TarifPengiriman::create([
+        'zona_pengiriman_id' => $zone->id,
+        'courier' => 'JNE',
+        'service' => 'REG',
+        'price_per_kg' => 10000,
+        'etd_min_days' => 1,
+        'etd_max_days' => 2,
+        'is_active' => true,
+    ]);
+
+    Sanctum::actingAs($this->pelanggan);
+
+    $response = $this->postJson('/api/checkout', [
+        'customer_name' => 'Rina Putri',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Raya Waru No. 15',
+        'shipping_city' => 'Sidoarjo',
+        'shipping_district' => 'Waru',
+        'shipping_postal_code' => '61256',
+        'destination_zone_id' => $zone->id,
+        'courier' => 'JNE',
+        'service' => 'REG',
+        'payment_method' => 'online',
+        'payment_channel' => 'bca_va',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(201);
+    expect($response->json('data.order.shipping_cost'))->toBe(10000);
+    expect($response->json('data.order.total_product_amount'))->toBe(185000);
+    expect($response->json('data.order.total_amount'))->toBe(195000);
+    expect($response->json('data.order.total'))->toBe(195000);
+    expect($response->json('data.order.subtotal'))->toBe(185000);
+    expect($response->json('data.order.courier'))->toBe('JNE');
+    expect($response->json('data.order.courier_service'))->toBe('REG');
+    expect($response->json('data.payment.gross_amount'))->toBe(195000);
+    expect($response->json('data.payment.bank'))->toBe('bca');
+});
+
+test('PPL-18 + PPL-20: Unified checkout rejects COD for non-Surabaya shipping zone with 422', function () {
+    $zone = \App\Models\ZonaPengiriman::create([
+        'province' => 'Jawa Timur',
+        'city' => 'Sidoarjo',
+        'district' => 'Waru',
+        'postal_code' => '61256',
+        'is_active' => true,
+    ]);
+    \App\Models\TarifPengiriman::create([
+        'zona_pengiriman_id' => $zone->id,
+        'courier' => 'JNE',
+        'service' => 'REG',
+        'price_per_kg' => 10000,
+        'etd_min_days' => 1,
+        'etd_max_days' => 2,
+        'is_active' => true,
+    ]);
+
+    Sanctum::actingAs($this->pelanggan);
+
+    $response = $this->postJson('/api/checkout', [
+        'customer_name' => 'Rina Putri',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Raya Waru No. 15',
+        'shipping_city' => 'Sidoarjo',
+        'destination_zone_id' => $zone->id,
+        'courier' => 'JNE',
+        'service' => 'REG',
+        'payment_method' => 'cod',
+        'payment_channel' => 'cash',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(422);
+});
+
+test('PPL-20: Customer cannot simulate payment on COD order or access another customer payment', function () {
+    Sanctum::actingAs($this->pelanggan);
+
+    $codOrder = $this->postJson('/api/orders', [
+        'customer_name' => 'Nadia COD',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Gubeng No. 5',
+        'shipping_city' => 'Kota Surabaya',
+        'payment_method' => 'cod',
+        'payment_channel' => 'cash',
+        'items' => [
+            [
+                'produk_id' => $this->produk->id,
+                'produk_varian_id' => $this->varian->id,
+                'quantity' => 1,
+            ],
+        ],
+    ])->assertStatus(201);
+
+    $codPaymentId = $codOrder->json('data.payment.id');
+
+    // Pelanggan tidak boleh simulate-pay untuk pesanan COD
+    $this->postJson("/api/payments/{$codPaymentId}/simulate-pay")->assertStatus(422);
+
+    // Pelanggan lain tidak boleh mengakses status/simulate pembayaran milik user lain
+    $otherCustomer = Pelanggan::create([
+        'username' => 'other_buyer',
+        'email' => 'other_buyer@example.com',
+        'password_hash' => bcrypt('password123'),
+        'is_active' => true,
+    ]);
+    Sanctum::actingAs($otherCustomer);
+
+    $this->getJson("/api/payments/{$codPaymentId}")->assertStatus(403);
+    $this->postJson("/api/payments/{$codPaymentId}/simulate-pay")->assertStatus(403);
+});

@@ -432,15 +432,15 @@ watch(isCustomerLoggedIn, (loggedIn) => {
             <small style="display: block; color: #6b7280;">{{ order.customer_phone }}</small>
           </div>
           <div>
-            <span class="info-label">Kota Tujuan</span>
-            <strong>{{ order.shipping_city || '-' }}</strong>
-            <small v-if="order.shipping_district" style="display: block; color: #6b7280;">Kec. {{ order.shipping_district }}</small>
+            <span class="info-label">Tujuan Pengiriman</span>
+            <strong>{{ [order.shipping_district ? `Kec. ${order.shipping_district}` : '', order.shipping_city || order.destination_city, order.destination_province, order.shipping_postal_code].filter(Boolean).join(', ') || '-' }}</strong>
             <span v-if="isCod && isSurabaya" class="badge-sub-highlight">📍 Wilayah COD Toko Surabaya</span>
           </div>
           <div>
             <span class="info-label">Ekspedisi &amp; Nomor Resi</span>
             <strong>{{ order.shipping_courier || (isCod ? 'Kurir Toko RiasKu Surabaya' : 'Reguler Courier') }}</strong>
             <small v-if="order.shipping_etd" style="display: block; color: #6b7280;">Estimasi kirim: {{ order.shipping_etd }}</small>
+            <small v-if="order.weight_grams" style="display: block; color: #6b7280;">Berat paket: {{ order.weight_grams }} g</small>
             <div v-if="order.tracking_number" class="resi-copy-row">
               <code>{{ order.tracking_number }}</code>
               <button type="button" class="copy-resi-btn" @click="copyTrackingNumber">Salin Resi</button>

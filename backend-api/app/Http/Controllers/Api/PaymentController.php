@@ -87,7 +87,6 @@ class PaymentController extends Controller
     public function status(Request $request, int|string $paymentId): JsonResponse
     {
         $payment = Pembayaran::query()
-            ->whereHas('pesanan', fn ($q) => $q->where('pelanggan_id', $request->user()->id))
             ->where(function ($sub) use ($paymentId): void {
                 if (is_numeric($paymentId)) {
                     $sub->where('id', (int) $paymentId)->orWhere('transaction_id', (string) $paymentId);
@@ -97,6 +96,12 @@ class PaymentController extends Controller
             })
             ->with('pesanan')
             ->firstOrFail();
+
+        if (! $payment->pesanan || $payment->pesanan->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke transaksi pembayaran ini.',
+            ], 403);
+        }
 
         return response()->json([
             'message' => 'Status pembayaran berhasil dimuat.',
@@ -123,7 +128,6 @@ class PaymentController extends Controller
         );
 
         $payment = Pembayaran::query()
-            ->whereHas('pesanan', fn ($q) => $q->where('pelanggan_id', $request->user()->id))
             ->where(function ($sub) use ($paymentId): void {
                 if (is_numeric($paymentId)) {
                     $sub->where('id', (int) $paymentId)->orWhere('transaction_id', (string) $paymentId);
@@ -134,12 +138,24 @@ class PaymentController extends Controller
             ->with('pesanan')
             ->firstOrFail();
 
+        $order = $payment->pesanan;
+        if (! $order || $order->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke transaksi pembayaran ini.',
+            ], 403);
+        }
+
+        if ($order->payment_method === 'cod' || $payment->payment_type === 'cod_cash') {
+            return response()->json([
+                'message' => 'Pesanan COD tidak dapat disimulasikan oleh pelanggan. Konfirmasi pembayaran tunai dilakukan oleh Admin.',
+            ], 422);
+        }
+
         $payment->update([
             'transaction_status' => 'settlement',
             'paid_at' => now(),
         ]);
 
-        $order = $payment->pesanan;
         $order = $this->applyMidtransSettlement(
             $order,
             'settlement',
@@ -164,9 +180,8 @@ class PaymentController extends Controller
      */
     public function syncStatus(Request $request, string $orderNumber): JsonResponse
     {
-        // Cari pesanan milik pelanggan berdasarkan order_code atau id
+        // Cari pesanan berdasarkan order_code atau id
         $order = Pesanan::query()
-            ->where('pelanggan_id', $request->user()->id)
             ->where(function ($sub) use ($orderNumber): void {
                 $sub->where('order_code', (string) $orderNumber);
                 if (is_numeric($orderNumber)) {
@@ -178,6 +193,12 @@ class PaymentController extends Controller
 
         if (! $order) {
             return response()->json(['message' => 'Pesanan tidak ditemukan.'], 404);
+        }
+
+        if ($order->pelanggan_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke pesanan ini.',
+            ], 403);
         }
 
         // COD tidak perlu sync ke Midtrans

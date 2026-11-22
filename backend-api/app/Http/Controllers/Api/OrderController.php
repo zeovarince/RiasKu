@@ -8,25 +8,28 @@ use App\Models\Pembayaran;
 use App\Models\Pesanan;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
+use App\Models\ZonaPengiriman;
 use App\Services\MidtransService;
 use App\Services\OrderStatusService;
+use App\Services\ShippingCostService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
     public function __construct(
         protected MidtransService $midtransService,
         protected OrderStatusService $orderStatusService,
+        protected ShippingCostService $shippingCostService,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $query = Pesanan::query()
             ->where('pelanggan_id', $request->user()->id)
-            ->with(OrderStatusService::orderRelations(false))
-            ->with('statusLogs')
+            ->with(array_merge(OrderStatusService::orderRelations(false), ['statusLogs', 'zona']))
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('search'))) {
@@ -79,6 +82,9 @@ class OrderController extends Controller
             'shipping_city' => ['required', 'string', 'max:100'],
             'shipping_district' => ['nullable', 'string', 'max:100'],
             'shipping_postal_code' => ['nullable', 'string', 'max:20'],
+            'destination_zone_id' => ['nullable', 'integer', 'exists:zona_pengiriman,id'],
+            'courier' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
+            'service' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
             'payment_method' => ['required', 'string', 'in:cod,online'],
             'payment_channel' => ['required', 'string'],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -124,6 +130,7 @@ class OrderController extends Controller
         [$order, $channel, $isCod] = DB::transaction(function () use ($validated, $user, $orderItemsData): array {
             $totalProductAmount = 0;
             $preparedItems = [];
+            $shippingItems = [];
 
             $indexedItems = [];
             foreach (array_values($orderItemsData) as $origIndex => $itemData) {
@@ -132,24 +139,29 @@ class OrderController extends Controller
 
             // Urutkan deterministik sebelum lockForUpdate agar urutan item berbeda tidak memicu deadlock MySQL.
             usort($indexedItems, static function (array $a, array $b): int {
-                $prodCmp = ((int) $a['item']['produk_id']) <=> ((int) $b['item']['produk_id']);
-                if ($prodCmp !== 0) {
-                    return $prodCmp;
+                $aProd = (int) ($a['item']['produk_id'] ?? $a['item']['product_id'] ?? 0);
+                $bProd = (int) ($b['item']['produk_id'] ?? $b['item']['product_id'] ?? 0);
+                if ($aProd !== $bProd) {
+                    return $aProd <=> $bProd;
                 }
 
-                return ((int) ($a['item']['produk_varian_id'] ?? 0)) <=> ((int) ($b['item']['produk_varian_id'] ?? 0));
+                $aVar = (int) ($a['item']['produk_varian_id'] ?? $a['item']['variant_id'] ?? 0);
+                $bVar = (int) ($b['item']['produk_varian_id'] ?? $b['item']['variant_id'] ?? 0);
+
+                return $aVar <=> $bVar;
             });
 
             foreach ($indexedItems as $entry) {
                 $origIndex = $entry['index'];
                 $itemData = $entry['item'];
-                $product = Produk::query()->whereKey($itemData['produk_id'])->lockForUpdate()->firstOrFail();
+                $productId = $itemData['produk_id'] ?? $itemData['product_id'] ?? null;
+                $product = Produk::query()->whereKey($productId)->lockForUpdate()->firstOrFail();
 
                 if (! $product->is_active) {
                     abort(422, "Produk {$product->name} saat ini sedang dinonaktifkan.");
                 }
 
-                $variantId = $itemData['produk_varian_id'] ?? null;
+                $variantId = $itemData['produk_varian_id'] ?? $itemData['variant_id'] ?? null;
                 $variant = null;
 
                 if ($variantId) {
@@ -195,14 +207,21 @@ class OrderController extends Controller
                 $lineSubtotal = $price * $qty;
                 $totalProductAmount += $lineSubtotal;
 
+                $shippingItems[$origIndex] = [
+                    'product' => $product,
+                    'quantity' => $qty,
+                ];
+
                 $preparedItems[$origIndex] = [
                     'produk_id' => $product->id,
                     'produk_varian_id' => $variantId,
                     'product_name' => $product->name,
                     'variant_name' => $variant ? $variant->name : null,
+                    'sku' => $product->sku,
                     'product_sku' => $product->sku,
                     'unit_price' => $price,
                     'quantity' => $qty,
+                    'line_total' => $lineSubtotal,
                     'subtotal' => $lineSubtotal,
                     'is_preorder' => $isLinePreorder,
                     'preorder_estimate_days' => $isLinePreorder ? $product->preorder_estimate_days : null,
@@ -210,6 +229,8 @@ class OrderController extends Controller
                 ];
             }
 
+            ksort($shippingItems);
+            $shippingItems = array_values($shippingItems);
             ksort($preparedItems);
             $preparedItems = array_values($preparedItems);
 
@@ -218,27 +239,102 @@ class OrderController extends Controller
                 ? (int) collect($preparedItems)->filter(fn (array $item): bool => (bool) $item['is_preorder'])->max('preorder_estimate_days')
                 : null;
 
-            $shippingCost = 0; // Bebas ongkir COD Surabaya / promo toko
-            $totalAmount = $totalProductAmount + $shippingCost;
-
             $isCod = $validated['payment_method'] === 'cod';
             $channel = $isCod ? 'cash' : $validated['payment_channel'];
 
+            // PPL-18: Hitung ongkir otomatis dari server jika zona pengiriman & kurir dipilih
+            $shippingCost = 0;
+            $shippingZoneId = null;
+            $destinationProvince = null;
+            $destinationCity = $validated['shipping_city'];
+            $destinationDistrict = $validated['shipping_district'] ?? 'Surabaya';
+            $destinationPostalCode = $validated['shipping_postal_code'] ?? null;
+            $courier = null;
+            $courierService = null;
+            $shippingEtd = null;
+            $weightGrams = 0;
+            $shippingCourierLabel = $isCod ? 'Kurir Toko RiasKu (COD)' : 'JNE Regular / Pengiriman RiasKu';
+
+            if (! empty($validated['destination_zone_id'])) {
+                $zone = ZonaPengiriman::query()
+                    ->whereKey($validated['destination_zone_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $zone || ! $zone->is_active) {
+                    throw ValidationException::withMessages([
+                        'destination_zone_id' => ['Zona pengiriman tidak ditemukan atau tidak aktif.'],
+                    ]);
+                }
+
+                if ($isCod) {
+                    $this->shippingCostService->validasiCod($zone);
+                }
+
+                $rate = $this->shippingCostService->resolveTarif(
+                    (int) $zone->id,
+                    (string) $validated['courier'],
+                    (string) $validated['service'],
+                );
+
+                $weightGrams = $this->shippingCostService->hitungBerat($shippingItems);
+                $quote = $this->shippingCostService->hitungOngkir($totalProductAmount, $weightGrams, $zone);
+                $selectedOption = collect($quote['options'])->first(
+                    fn (array $option): bool => $option['courier'] === $rate->courier
+                        && $option['service'] === $rate->service,
+                );
+
+                if (! $selectedOption) {
+                    throw ValidationException::withMessages([
+                        'service' => ['Layanan pengiriman tidak tersedia untuk zona ini.'],
+                    ]);
+                }
+
+                $shippingCost = (int) $selectedOption['cost'];
+                $shippingZoneId = $zone->id;
+                $destinationProvince = $zone->province;
+                $destinationCity = $zone->city;
+                $destinationDistrict = $zone->district ?? $destinationDistrict;
+                $destinationPostalCode = $zone->postal_code ?? $destinationPostalCode;
+                $courier = $rate->courier;
+                $courierService = $rate->service;
+                $shippingEtd = "{$rate->etd_min_days}-{$rate->etd_max_days} hari";
+                $shippingCourierLabel = $isCod
+                    ? "Kurir Toko RiasKu (COD) / {$rate->courier} {$rate->service}"
+                    : "{$rate->courier} {$rate->service} ({$shippingEtd})";
+            }
+
+            $totalAmount = $totalProductAmount + $shippingCost;
+
             $order = Pesanan::create([
                 'pelanggan_id' => $user->id,
+                'recipient_name' => $validated['customer_name'],
+                'recipient_phone' => $validated['customer_phone'],
                 'customer_name' => $validated['customer_name'],
                 'customer_phone' => $validated['customer_phone'],
                 'shipping_address' => $validated['shipping_address'],
-                'shipping_city' => $validated['shipping_city'],
-                'shipping_district' => $validated['shipping_district'] ?? 'Surabaya',
-                'shipping_postal_code' => $validated['shipping_postal_code'] ?? null,
-                'shipping_courier' => $isCod ? 'Kurir Toko RiasKu (COD)' : 'JNE Regular / Pengiriman RiasKu',
+                'shipping_zone_id' => $shippingZoneId,
+                'destination_province' => $destinationProvince,
+                'destination_city' => $destinationCity,
+                'destination_district' => $destinationDistrict,
+                'destination_postal_code' => $destinationPostalCode,
+                'shipping_city' => $destinationCity,
+                'shipping_district' => $destinationDistrict,
+                'shipping_postal_code' => $destinationPostalCode,
+                'courier' => $courier,
+                'courier_service' => $courierService,
+                'shipping_etd' => $shippingEtd,
+                'weight_grams' => $weightGrams,
+                'shipping_courier' => $shippingCourierLabel,
                 'shipping_cost' => $shippingCost,
+                'subtotal' => $totalProductAmount,
                 'total_product_amount' => $totalProductAmount,
+                'total' => $totalAmount,
                 'total_amount' => $totalAmount,
                 'payment_method' => $validated['payment_method'],
                 'payment_channel' => $channel,
                 'payment_status' => $isCod ? 'menunggu_pembayaran_cod' : 'menunggu_pembayaran',
+                'status' => $isCod ? 'diproses' : 'menunggu_pembayaran',
                 'order_status' => $isCod ? 'diproses' : 'menunggu_pembayaran',
                 'has_preorder_items' => $hasPreorderItems,
                 'preorder_estimate_days' => $preorderEstimateDays ?: null,
@@ -286,7 +382,7 @@ class OrderController extends Controller
             'expiry_time' => $chargeResult['expiry_time'] ?? null,
         ]);
 
-        $order->load(OrderStatusService::orderRelations(true));
+        $order->load(array_merge(OrderStatusService::orderRelations(true), ['zona']));
 
         return response()->json([
             'message' => $isCod
@@ -312,7 +408,7 @@ class OrderController extends Controller
                     $sub->where('order_code', (string) $id);
                 }
             })
-            ->with(OrderStatusService::orderRelations(true))
+            ->with(array_merge(OrderStatusService::orderRelations(true), ['zona']))
             ->first();
 
         if (! $order) {
@@ -378,7 +474,7 @@ class OrderController extends Controller
 
         $order = Pesanan::query()
             ->where('order_code', $code)
-            ->with(['items', 'latestPembayaran', 'statusLogs'])
+            ->with(['items', 'latestPembayaran', 'statusLogs', 'zona'])
             ->first();
 
         if (! $order) {
@@ -427,6 +523,8 @@ class OrderController extends Controller
             'created_at' => $log->created_at,
         ])->values();
 
+        $resolvedStatus = $order->resolvedOrderStatus();
+
         return response()->json([
             'message' => 'Informasi pelacakan pesanan berhasil ditemukan.',
             'data' => [
@@ -434,17 +532,25 @@ class OrderController extends Controller
                 'order_code' => $order->order_code,
                 'customer_name' => $order->customer_name ?: $order->recipient_name,
                 'customer_phone' => Pesanan::maskPhone($order->customer_phone ?: $order->recipient_phone),
+                'destination_province' => $order->destination_province,
                 'shipping_city' => $order->shipping_city ?: $order->destination_city,
                 'shipping_district' => $order->shipping_district ?: $order->destination_district,
+                'shipping_postal_code' => $order->shipping_postal_code ?: $order->destination_postal_code,
                 'shipping_courier' => $order->shipping_courier ?: trim((string) ($order->courier.' '.($order->courier_service ?? ''))),
+                'courier' => $order->courier,
+                'courier_service' => $order->courier_service,
                 'shipping_etd' => $order->shipping_etd,
+                'weight_grams' => $order->weight_grams,
                 'tracking_number' => $order->tracking_number,
-                'order_status' => $order->resolvedOrderStatus(),
+                'order_status' => $resolvedStatus,
+                'status' => $resolvedStatus,
                 'payment_status' => $order->payment_status,
                 'payment_method' => $order->payment_method,
                 'payment_channel' => $order->payment_channel,
+                'subtotal' => $order->subtotal ?? $order->total_product_amount ?? 0,
                 'total_product_amount' => $order->total_product_amount ?? $order->subtotal ?? 0,
-                'shipping_cost' => $order->shipping_cost ?? 0,
+                'shipping_cost' => (int) ($order->shipping_cost ?? 0),
+                'total' => $order->total ?? $order->total_amount ?? 0,
                 'total_amount' => $order->total_amount ?? $order->total ?? 0,
                 'has_preorder_items' => (bool) $order->has_preorder_items,
                 'preorder_estimate_days' => $order->preorder_estimate_days,

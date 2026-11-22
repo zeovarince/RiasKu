@@ -35,6 +35,9 @@ return new class extends Migration
             });
         } else {
             Schema::table('pesanan', function (Blueprint $table): void {
+                // Pastikan panjang kolom payment_status cukup untuk 'menunggu_pembayaran_cod' (23 karakter) di PostgreSQL
+                $table->string('payment_status', 30)->default('menunggu_pembayaran')->change();
+
                 if (!Schema::hasColumn('pesanan', 'customer_name')) {
                     $table->string('customer_name', 150)->nullable()->after('recipient_name');
                 }
