@@ -6,15 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Pembayaran;
 use App\Models\Pesanan;
 use App\Services\MidtransService;
+use App\Services\OrderStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class PaymentController extends Controller
 {
-    public function __construct(protected MidtransService $midtransService)
-    {
-    }
+    public function __construct(
+        protected MidtransService $midtransService,
+        protected OrderStatusService $orderStatusService,
+    ) {}
 
     /**
      * POST /api/orders/{id}/payments
@@ -84,7 +87,8 @@ class PaymentController extends Controller
     public function status(Request $request, int|string $paymentId): JsonResponse
     {
         $payment = Pembayaran::query()
-            ->where(function ($sub) use ($paymentId) {
+            ->whereHas('pesanan', fn ($q) => $q->where('pelanggan_id', $request->user()->id))
+            ->where(function ($sub) use ($paymentId): void {
                 if (is_numeric($paymentId)) {
                     $sub->where('id', (int) $paymentId)->orWhere('transaction_id', (string) $paymentId);
                 } else {
@@ -109,8 +113,18 @@ class PaymentController extends Controller
      */
     public function simulateSuccess(Request $request, int|string $paymentId): JsonResponse
     {
+        $hasServerKey = trim((string) config('services.midtrans.server_key', '')) !== '';
+        $isProdMidtrans = (bool) config('services.midtrans.is_production', false);
+
+        abort_if(
+            $this->midtransService->isLiveMode() || $hasServerKey || $isProdMidtrans || app()->isProduction(),
+            403,
+            'Simulasi pembayaran hanya tersedia di mode sandbox lokal.'
+        );
+
         $payment = Pembayaran::query()
-            ->where(function ($sub) use ($paymentId) {
+            ->whereHas('pesanan', fn ($q) => $q->where('pelanggan_id', $request->user()->id))
+            ->where(function ($sub) use ($paymentId): void {
                 if (is_numeric($paymentId)) {
                     $sub->where('id', (int) $paymentId)->orWhere('transaction_id', (string) $paymentId);
                 } else {
@@ -126,16 +140,18 @@ class PaymentController extends Controller
         ]);
 
         $order = $payment->pesanan;
-        $order->update([
-            'payment_status' => 'dibayar',
-            'order_status' => 'diproses',
-        ]);
+        $order = $this->applyMidtransSettlement(
+            $order,
+            'settlement',
+            'Payment Simulator',
+            'Simulasi pembayaran berhasil diverifikasi.'
+        );
 
         return response()->json([
             'message' => 'Simulasi pembayaran berhasil! Pesanan Anda telah lunas dan sedang diproses.',
             'data' => [
                 'payment' => $payment->fresh(),
-                'order' => $order->fresh(),
+                'order' => $order,
             ],
         ]);
     }
@@ -148,9 +164,10 @@ class PaymentController extends Controller
      */
     public function syncStatus(Request $request, string $orderNumber): JsonResponse
     {
-        // Cari pesanan berdasarkan order_code atau id (aman untuk PostgreSQL bigint)
+        // Cari pesanan milik pelanggan berdasarkan order_code atau id
         $order = Pesanan::query()
-            ->where(function ($sub) use ($orderNumber) {
+            ->where('pelanggan_id', $request->user()->id)
+            ->where(function ($sub) use ($orderNumber): void {
                 $sub->where('order_code', (string) $orderNumber);
                 if (is_numeric($orderNumber)) {
                     $sub->orWhere('id', (int) $orderNumber);
@@ -159,7 +176,7 @@ class PaymentController extends Controller
             ->with('latestPembayaran')
             ->first();
 
-        if (!$order) {
+        if (! $order) {
             return response()->json(['message' => 'Pesanan tidak ditemukan.'], 404);
         }
 
@@ -190,7 +207,7 @@ class PaymentController extends Controller
         // Panggil Midtrans GET status
         $midtransResult = $this->midtransService->syncTransactionStatus($order->order_code);
 
-        if (!$midtransResult) {
+        if (! $midtransResult) {
             // Mode simulasi lokal - kembalikan status saat ini tanpa perubahan
             return response()->json([
                 'message' => 'Mode simulasi lokal: sinkronisasi Midtrans tidak tersedia. Gunakan tombol "Simulasikan Pembayaran" untuk pengujian.',
@@ -214,10 +231,12 @@ class PaymentController extends Controller
                 'paid_at' => now(),
                 'payload_response' => $midtransResult,
             ]);
-            $order->update([
-                'payment_status' => 'dibayar',
-                'order_status' => 'diproses',
-            ]);
+            $order = $this->applyMidtransSettlement(
+                $order,
+                $trxStatus,
+                'Midtrans Gateway',
+                'Pembayaran terkonfirmasi settlement melalui sinkronisasi Midtrans.'
+            );
             $synced = true;
 
             Log::info("[PaymentController] Sync: Pesanan {$order->order_code} → settlement/dibayar");
@@ -227,17 +246,12 @@ class PaymentController extends Controller
                 'transaction_status' => $trxStatus,
                 'payload_response' => $midtransResult,
             ]);
-            $order->update([
-                'payment_status' => 'kadaluarsa',
-                'order_status' => 'dibatalkan',
-            ]);
-
-            // Kembalikan stok
-            foreach ($order->items as $item) {
-                if ($item->produk_varian_id) {
-                    $item->varian?->increment('stock', $item->quantity);
-                }
-            }
+            $order = $this->applyMidtransCancellation(
+                $order,
+                $trxStatus,
+                'Midtrans Gateway',
+                "Pembayaran {$trxStatus} melalui sinkronisasi Midtrans."
+            );
             $synced = true;
 
             Log::info("[PaymentController] Sync: Pesanan {$order->order_code} → {$trxStatus}");
@@ -277,20 +291,21 @@ class PaymentController extends Controller
             'status_code' => $statusCode,
         ]);
 
-        if (!$orderCode) {
+        if (! $orderCode) {
             return response()->json(['message' => 'Invalid order code.'], 400);
         }
 
         // Verifikasi signature wajib jika Server Key disetel
         if ($this->midtransService->isLiveMode()) {
-            if (!$this->midtransService->verifySignature($orderCode, $statusCode, $grossAmount, $signatureKey)) {
+            if (! $this->midtransService->verifySignature($orderCode, $statusCode, $grossAmount, $signatureKey)) {
                 Log::warning('[Midtrans Webhook] Invalid signature', ['order_id' => $orderCode]);
+
                 return response()->json(['message' => 'Invalid signature.'], 403);
             }
         }
 
         $order = Pesanan::where('order_code', $orderCode)->first();
-        if (!$order) {
+        if (! $order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
@@ -302,10 +317,12 @@ class PaymentController extends Controller
                 'paid_at' => now(),
                 'payload_response' => $payload,
             ]);
-            $order->update([
-                'payment_status' => 'dibayar',
-                'order_status' => 'diproses',
-            ]);
+            $this->applyMidtransSettlement(
+                $order,
+                $trxStatus,
+                'Midtrans Webhook',
+                "Webhook Midtrans: transaksi {$trxStatus} lunas."
+            );
 
             Log::info("[Midtrans Webhook] Pesanan {$orderCode} → LUNAS (settlement)");
 
@@ -314,17 +331,12 @@ class PaymentController extends Controller
                 'transaction_status' => $trxStatus,
                 'payload_response' => $payload,
             ]);
-            $order->update([
-                'payment_status' => 'kadaluarsa',
-                'order_status' => 'dibatalkan',
-            ]);
-
-            // Kembalikan stok item pesanan
-            foreach ($order->items as $item) {
-                if ($item->produk_varian_id) {
-                    $item->varian?->increment('stock', $item->quantity);
-                }
-            }
+            $this->applyMidtransCancellation(
+                $order,
+                $trxStatus,
+                'Midtrans Webhook',
+                "Webhook Midtrans: transaksi {$trxStatus}, pesanan dibatalkan otomatis."
+            );
 
             Log::info("[Midtrans Webhook] Pesanan {$orderCode} → {$trxStatus}, stok dikembalikan.");
 
@@ -335,5 +347,73 @@ class PaymentController extends Controller
         }
 
         return response()->json(['message' => 'Notification processed successfully.']);
+    }
+
+    private function applyMidtransSettlement(Pesanan $order, string $trxStatus, string $actorName, string $note): Pesanan
+    {
+        try {
+            return $this->orderStatusService->transition($order, 'diproses', [
+                'actor_type' => 'midtrans',
+                'actor_name' => $actorName,
+                'payment_status' => 'dibayar',
+                'note' => $note,
+                'idempotent' => true,
+            ]);
+        } catch (ValidationException) {
+            $fresh = $order->fresh();
+            if (! $fresh) {
+                return $order;
+            }
+
+            $currentStatus = $fresh->resolvedOrderStatus();
+            Log::warning('[Midtrans] Transisi settlement diabaikan', [
+                'order' => $fresh->order_code,
+                'trx' => $trxStatus,
+                'current' => $currentStatus,
+            ]);
+
+            if ($currentStatus === 'dibatalkan' && $fresh->resolvedPaymentStatus() !== 'dibayar') {
+                $fresh->update(['payment_status' => 'dibayar']);
+                $fresh->statusLogs()->create([
+                    'from_status' => 'dibatalkan',
+                    'to_status' => 'dibatalkan',
+                    'actor_type' => 'midtrans',
+                    'actor_name' => $actorName,
+                    'tracking_number' => $fresh->tracking_number,
+                    'note' => 'Pembayaran settlement diterima setelah pesanan dibatalkan — perlu refund manual.',
+                    'created_at' => now(),
+                ]);
+            } elseif ($currentStatus !== 'dibatalkan' && $fresh->resolvedPaymentStatus() !== 'dibayar') {
+                $fresh->update(['payment_status' => 'dibayar']);
+            }
+
+            return $fresh->fresh();
+        }
+    }
+
+    private function applyMidtransCancellation(Pesanan $order, string $trxStatus, string $actorName, string $note): Pesanan
+    {
+        try {
+            return $this->orderStatusService->transition($order, 'dibatalkan', [
+                'actor_type' => 'midtrans',
+                'actor_name' => $actorName,
+                'payment_status' => 'kadaluarsa',
+                'note' => $note,
+                'idempotent' => true,
+            ]);
+        } catch (ValidationException) {
+            $fresh = $order->fresh();
+            if (! $fresh) {
+                return $order;
+            }
+
+            Log::warning('[Midtrans] Transisi pembatalan diabaikan karena pesanan sudah diproses/selesai', [
+                'order' => $fresh->order_code,
+                'trx' => $trxStatus,
+                'current' => $fresh->resolvedOrderStatus(),
+            ]);
+
+            return $fresh;
+        }
     }
 }

@@ -4,24 +4,42 @@ import { useRoute } from 'vue-router'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { logoutAdmin } from '@/services/adminAuthService'
+import { adminService } from '@/services/adminService'
 
 const route = useRoute()
 const auth = useAuthStore()
-const items = [
+const pendingOrdersCount = ref(0)
+
+const items = computed(() => [
   { label: 'Dashboard', to: '/admin/dashboard', icon: 'dashboard' },
   { label: 'Produk', to: '/admin/products', icon: 'products' },
   { label: 'Kategori', to: '/admin/categories', icon: 'categories' },
   { label: 'Ulasan', to: '/admin/reviews', icon: 'reviews' },
-  { label: 'Pesanan', to: '/admin/orders', icon: 'orders', badge: '3' },
+  {
+    label: 'Pesanan',
+    to: '/admin/orders',
+    icon: 'orders',
+    badge: pendingOrdersCount.value > 0 ? String(pendingOrdersCount.value) : null,
+  },
   { label: 'Barang masuk', to: '/admin/inventory/incoming', icon: 'inventory' },
   { label: 'Penjualan DoD', to: '/admin/sales/direct', icon: 'sales' },
   { label: 'Rekap bulanan', to: '/admin/reports/monthly', icon: 'reports' },
   { label: 'Pengaturan toko', to: '/admin/settings', icon: 'settings' },
-]
+])
 const section = computed(() => {
-  const current = items.find((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
+  const current = items.value.find((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
   return current?.label || 'Dashboard'
 })
+
+async function fetchPendingOrdersCount() {
+  try {
+    const res = await adminService.orders({ per_page: 1 })
+    const count = res.data?.summary?.action_required_count ?? 0
+    pendingOrdersCount.value = Number(count) || 0
+  } catch {
+    pendingOrdersCount.value = 0
+  }
+}
 
 const isDropdownOpen = ref(false)
 const showProfileModal = ref(false)
@@ -57,10 +75,13 @@ function handleOutsideClick(event) {
 
 onMounted(() => {
   document.addEventListener('click', handleOutsideClick)
+  window.addEventListener('riasku-orders-updated', fetchPendingOrdersCount)
+  fetchPendingOrdersCount()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleOutsideClick)
+  window.removeEventListener('riasku-orders-updated', fetchPendingOrdersCount)
 })
 
 async function signOut() {
