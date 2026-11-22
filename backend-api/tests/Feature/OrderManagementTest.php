@@ -492,3 +492,124 @@ test('PPL-21 M3 & M4: confirmCodPayment respects state machine inside lock and P
     expect($order->fresh()->status)->toBe('selesai')
         ->and($order->fresh()->total)->toBe(123000);
 });
+
+test('PPL-21 security hardening: Midtrans expire cannot cancel paid diproses/COD orders, validates gross_amount & fraud_status, and blocks channel/duplicate-item bypasses', function () {
+    $customer = makeOrderCustomer('sec');
+    $kategori = Kategori::create(['name' => 'Cat Sec', 'slug' => 'cat-sec']);
+    $produk = Produk::create([
+        'kategori_id' => $kategori->id,
+        'sku' => 'SEC-01',
+        'name' => 'Cushion Sec',
+        'brand' => 'RiasKu',
+        'weight_grams' => 50,
+        'base_price' => 80000,
+        'retail_price' => 82000,
+        'is_preorder' => true,
+        'preorder_estimate_days' => 3,
+        'is_active' => true,
+    ]);
+    $varian = ProdukVarian::create(['produk_id' => $produk->id, 'name' => 'Ivory', 'stock' => 10, 'is_active' => true]);
+    $poVarian = ProdukVarian::create(['produk_id' => $produk->id, 'name' => 'PO Shade', 'stock' => 0, 'is_active' => true]);
+
+    config(['services.midtrans.server_key' => '']);
+
+    Sanctum::actingAs($customer);
+
+    // 1. Tolak channel CASH (case-insensitive) untuk metode online & gabungkan baris duplikat PO (> 99 pcs ditolak 422)
+    $this->postJson('/api/orders', [
+        'customer_name' => 'Bypass Test',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Sudirman 1',
+        'shipping_city' => 'Jakarta',
+        'payment_method' => 'online',
+        'payment_channel' => 'CASH',
+        'items' => [['produk_id' => $produk->id, 'produk_varian_id' => $varian->id, 'quantity' => 1]],
+    ])->assertStatus(422);
+
+    $this->postJson('/api/orders', [
+        'customer_name' => 'Dup PO Test',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Sudirman 1',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [
+            ['produk_id' => $produk->id, 'produk_varian_id' => $poVarian->id, 'quantity' => 60],
+            ['produk_id' => $produk->id, 'produk_varian_id' => $poVarian->id, 'quantity' => 60],
+        ],
+    ])->assertStatus(422);
+
+    // 2. Buat pesanan online -> fraud_status challenge tidak melunaskan -> settlement -> delayed expire TIDAK boleh membatalkan pesanan lunas!
+    $orderRes = $this->postJson('/api/orders', [
+        'customer_name' => 'Paid Order Sec',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Gubeng 9',
+        'shipping_city' => 'Surabaya',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'items' => [['produk_id' => $produk->id, 'produk_varian_id' => $varian->id, 'quantity' => 2]],
+    ])->assertCreated();
+
+    $orderCode = $orderRes->json('data.order.order_code');
+    $orderId = $orderRes->json('data.order.id');
+    expect($varian->fresh()->stock)->toBe(8);
+
+    // Nominal tidak cocok ditolak 422
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '200',
+        'gross_amount' => '1000.00',
+        'transaction_status' => 'settlement',
+    ])->assertStatus(422);
+
+    // Capture dengan fraud_status=challenge tidak boleh melunaskan
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '200',
+        'gross_amount' => '164000.00',
+        'transaction_status' => 'capture',
+        'fraud_status' => 'challenge',
+    ])->assertOk();
+    expect(Pesanan::findOrFail($orderId)->resolvedOrderStatus())->toBe('menunggu_pembayaran');
+
+    // Settlement resmi melunaskan & memproses pesanan
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '200',
+        'gross_amount' => '164000.00',
+        'transaction_status' => 'settlement',
+    ])->assertOk();
+    expect(Pesanan::findOrFail($orderId)->resolvedOrderStatus())->toBe('diproses');
+
+    // Delayed expire webhook pada pesanan yang sudah diproses/dibayar HARUS diabaikan (tidak batal, tidak ubah payment, tidak kembalikan stok!)
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '407',
+        'gross_amount' => '164000.00',
+        'transaction_status' => 'expire',
+    ])->assertOk();
+
+    $freshPaid = Pesanan::with('latestPembayaran')->findOrFail($orderId);
+    expect($freshPaid->resolvedOrderStatus())->toBe('diproses')
+        ->and($freshPaid->payment_status)->toBe('dibayar')
+        ->and($freshPaid->latestPembayaran->transaction_status)->toBe('settlement')
+        ->and($varian->fresh()->stock)->toBe(8);
+
+    // 3. Webhook Midtrans pada pesanan COD ditolak 422
+    $codRes = $this->postJson('/api/orders', [
+        'customer_name' => 'COD Guard',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Gubeng 10',
+        'shipping_city' => 'Kota Surabaya',
+        'payment_method' => 'cod',
+        'payment_channel' => 'cash',
+        'items' => [['produk_id' => $produk->id, 'produk_varian_id' => $varian->id, 'quantity' => 1]],
+    ])->assertCreated();
+
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $codRes->json('data.order.order_code'),
+        'status_code' => '407',
+        'gross_amount' => '82000.00',
+        'transaction_status' => 'expire',
+    ])->assertStatus(422);
+});

@@ -9,6 +9,7 @@ use App\Services\MidtransService;
 use App\Services\OrderStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -42,7 +43,19 @@ class PaymentController extends Controller
             ->with('latestPembayaran')
             ->firstOrFail();
 
-        $channel = $validated['channel'] ?? ($validated['method'] ?? $order->payment_channel);
+        if ($order->isCodOrder()) {
+            return response()->json([
+                'message' => 'Pesanan COD tidak memerlukan pembuatan instruksi pembayaran online.',
+            ], 422);
+        }
+
+        if ($order->resolvedPaymentStatus() === 'dibayar' || in_array($order->resolvedOrderStatus(), ['selesai', 'dibatalkan'], true)) {
+            return response()->json([
+                'message' => 'Pesanan ini sudah lunas atau tidak lagi aktif untuk pembayaran baru.',
+            ], 422);
+        }
+
+        $channel = (string) ($validated['channel'] ?? ($validated['method'] ?? $order->payment_channel ?? 'qris'));
 
         // Jika sudah ada pembayaran pending yang valid dengan channel yang sama
         if ($order->latestPembayaran && $order->latestPembayaran->transaction_status === 'pending' && $order->latestPembayaran->expiry_time > now()) {
@@ -151,16 +164,18 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        $payment->update([
-            'transaction_status' => 'settlement',
-            'paid_at' => now(),
-        ]);
+        if ($order->resolvedOrderStatus() !== 'menunggu_pembayaran' || $payment->transaction_status !== 'pending') {
+            return response()->json([
+                'message' => 'Pembayaran ini tidak lagi berstatus menunggu pembayaran.',
+            ], 422);
+        }
 
         $order = $this->applyMidtransSettlement(
             $order,
+            $payment,
             'settlement',
             'Payment Simulator',
-            'Simulasi pembayaran berhasil diverifikasi.'
+            'Simulasi pembayaran berhasil diverifikasi.',
         );
 
         return response()->json([
@@ -214,7 +229,7 @@ class PaymentController extends Controller
         }
 
         // Jika sudah dibayar, langsung kembalikan status
-        if (in_array($order->payment_status, ['dibayar', 'lunas'])) {
+        if ($order->resolvedPaymentStatus() === 'dibayar') {
             return response()->json([
                 'message' => 'Pembayaran sudah lunas.',
                 'data' => [
@@ -242,38 +257,34 @@ class PaymentController extends Controller
         }
 
         // Update status berdasarkan respons Midtrans
-        $trxStatus = $midtransResult['transaction_status'] ?? '';
+        $trxStatus = strtolower((string) ($midtransResult['transaction_status'] ?? ''));
+        $fraudStatus = strtolower((string) ($midtransResult['fraud_status'] ?? 'accept'));
         $payment = $order->latestPembayaran;
         $synced = false;
 
-        if (in_array($trxStatus, ['capture', 'settlement'])) {
-            $payment?->update([
-                'transaction_status' => 'settlement',
-                'paid_at' => now(),
-                'payload_response' => $midtransResult,
-            ]);
+        if ($trxStatus === 'settlement' || ($trxStatus === 'capture' && $fraudStatus === 'accept')) {
             $order = $this->applyMidtransSettlement(
                 $order,
+                $payment,
                 $trxStatus,
                 'Midtrans Gateway',
-                'Pembayaran terkonfirmasi settlement melalui sinkronisasi Midtrans.'
+                'Pembayaran terkonfirmasi settlement melalui sinkronisasi Midtrans.',
+                $midtransResult,
             );
             $synced = true;
 
             Log::info("[PaymentController] Sync: Pesanan {$order->order_code} → settlement/dibayar");
 
-        } elseif (in_array($trxStatus, ['expire', 'cancel', 'deny'])) {
-            $payment?->update([
-                'transaction_status' => $trxStatus,
-                'payload_response' => $midtransResult,
-            ]);
-            $order = $this->applyMidtransCancellation(
+        } elseif (in_array($trxStatus, ['expire', 'cancel', 'deny'], true) || ($trxStatus === 'capture' && $fraudStatus === 'deny')) {
+            [$order, $cancelled] = $this->applyMidtransCancellation(
                 $order,
-                $trxStatus,
+                $payment,
+                $trxStatus === 'capture' ? 'deny' : $trxStatus,
                 'Midtrans Gateway',
-                "Pembayaran {$trxStatus} melalui sinkronisasi Midtrans."
+                "Pembayaran {$trxStatus} melalui sinkronisasi Midtrans.",
+                $midtransResult,
             );
-            $synced = true;
+            $synced = $cancelled;
 
             Log::info("[PaymentController] Sync: Pesanan {$order->order_code} → {$trxStatus}");
         }
@@ -316,6 +327,13 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Invalid order code.'], 400);
         }
 
+        // Fail-closed di produksi bila MIDTRANS_SERVER_KEY belum dikonfigurasi
+        if (! $this->midtransService->isLiveMode() && (app()->isProduction() || (bool) config('services.midtrans.is_production', false))) {
+            Log::error('[Midtrans Webhook] Server key belum dikonfigurasi di lingkungan produksi.');
+
+            return response()->json(['message' => 'Konfigurasi webhook Midtrans belum siap.'], 503);
+        }
+
         // Verifikasi signature wajib jika Server Key disetel
         if ($this->midtransService->isLiveMode()) {
             if (! $this->midtransService->verifySignature($orderCode, $statusCode, $grossAmount, $signatureKey)) {
@@ -330,111 +348,183 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
-        $payment = Pembayaran::where('pesanan_id', $order->id)->latest()->first();
+        if ($order->isCodOrder()) {
+            return response()->json(['message' => 'Webhook Midtrans tidak berlaku untuk pesanan COD.'], 422);
+        }
 
-        if ($trxStatus === 'capture' || $trxStatus === 'settlement') {
-            $payment?->update([
-                'transaction_status' => 'settlement',
-                'paid_at' => now(),
-                'payload_response' => $payload,
+        $expectedTotal = (int) ($order->total_amount ?? $order->total ?? 0);
+        if ($grossAmount !== '' && is_numeric($grossAmount) && (int) round((float) $grossAmount) !== $expectedTotal) {
+            Log::warning('[Midtrans Webhook] Gross amount mismatch', [
+                'order_id' => $orderCode,
+                'expected' => $expectedTotal,
+                'received' => $grossAmount,
             ]);
+
+            return response()->json(['message' => 'Nominal transaksi tidak sesuai dengan total pesanan.'], 422);
+        }
+
+        $payment = Pembayaran::where('pesanan_id', $order->id)->latest()->first();
+        $normalizedTrxStatus = strtolower($trxStatus);
+        $fraudStatus = strtolower((string) ($payload['fraud_status'] ?? 'accept'));
+
+        if ($normalizedTrxStatus === 'settlement' || ($normalizedTrxStatus === 'capture' && $fraudStatus === 'accept')) {
             $this->applyMidtransSettlement(
                 $order,
-                $trxStatus,
+                $payment,
+                $normalizedTrxStatus,
                 'Midtrans Webhook',
-                "Webhook Midtrans: transaksi {$trxStatus} lunas."
+                "Webhook Midtrans: transaksi {$normalizedTrxStatus} lunas.",
+                $payload,
             );
 
             Log::info("[Midtrans Webhook] Pesanan {$orderCode} → LUNAS (settlement)");
 
-        } elseif (in_array($trxStatus, ['expire', 'cancel', 'deny'])) {
-            $payment?->update([
-                'transaction_status' => $trxStatus,
-                'payload_response' => $payload,
-            ]);
+        } elseif (in_array($normalizedTrxStatus, ['expire', 'cancel', 'deny'], true) || ($normalizedTrxStatus === 'capture' && $fraudStatus === 'deny')) {
+            $effectiveStatus = $normalizedTrxStatus === 'capture' ? 'deny' : $normalizedTrxStatus;
             $this->applyMidtransCancellation(
                 $order,
-                $trxStatus,
+                $payment,
+                $effectiveStatus,
                 'Midtrans Webhook',
-                "Webhook Midtrans: transaksi {$trxStatus}, pesanan dibatalkan otomatis."
+                "Webhook Midtrans: transaksi {$effectiveStatus}, pesanan dibatalkan otomatis.",
+                $payload,
             );
 
-            Log::info("[Midtrans Webhook] Pesanan {$orderCode} → {$trxStatus}, stok dikembalikan.");
+            Log::info("[Midtrans Webhook] Pesanan {$orderCode} → {$effectiveStatus}");
 
-        } elseif ($trxStatus === 'pending') {
-            $payment?->update([
-                'payload_response' => $payload,
-            ]);
+        } elseif ($normalizedTrxStatus === 'pending' || ($normalizedTrxStatus === 'capture' && $fraudStatus === 'challenge')) {
+            if ($payment && $payment->transaction_status === 'pending') {
+                $payment->update([
+                    'payload_response' => $payload,
+                ]);
+            }
         }
 
         return response()->json(['message' => 'Notification processed successfully.']);
     }
 
-    private function applyMidtransSettlement(Pesanan $order, string $trxStatus, string $actorName, string $note): Pesanan
-    {
+    /**
+     * @param  array<string, mixed>|null  $payload
+     */
+    private function applyMidtransSettlement(
+        Pesanan $order,
+        ?Pembayaran $payment,
+        string $trxStatus,
+        string $actorName,
+        string $note,
+        ?array $payload = null,
+    ): Pesanan {
         try {
-            return $this->orderStatusService->transition($order, 'diproses', [
+            $updatedOrder = $this->orderStatusService->transition($order, 'diproses', [
                 'actor_type' => 'midtrans',
                 'actor_name' => $actorName,
                 'payment_status' => 'dibayar',
                 'note' => $note,
                 'idempotent' => true,
             ]);
+
+            if ($payment) {
+                $paymentUpdates = [
+                    'transaction_status' => 'settlement',
+                    'paid_at' => $payment->paid_at ?? now(),
+                ];
+                if ($payload !== null) {
+                    $paymentUpdates['payload_response'] = $payload;
+                }
+                $payment->update($paymentUpdates);
+            }
+
+            return $updatedOrder;
         } catch (ValidationException) {
-            $fresh = $order->fresh();
-            if (! $fresh) {
-                return $order;
-            }
+            return DB::transaction(function () use ($order, $payment, $trxStatus, $actorName, $payload): Pesanan {
+                $locked = Pesanan::query()->whereKey($order->id)->lockForUpdate()->first();
+                if (! $locked) {
+                    return $order;
+                }
 
-            $currentStatus = $fresh->resolvedOrderStatus();
-            Log::warning('[Midtrans] Transisi settlement diabaikan', [
-                'order' => $fresh->order_code,
-                'trx' => $trxStatus,
-                'current' => $currentStatus,
-            ]);
-
-            if ($currentStatus === 'dibatalkan' && $fresh->resolvedPaymentStatus() !== 'dibayar') {
-                $fresh->update(['payment_status' => 'dibayar']);
-                $fresh->statusLogs()->create([
-                    'from_status' => 'dibatalkan',
-                    'to_status' => 'dibatalkan',
-                    'actor_type' => 'midtrans',
-                    'actor_name' => $actorName,
-                    'tracking_number' => $fresh->tracking_number,
-                    'note' => 'Pembayaran settlement diterima setelah pesanan dibatalkan — perlu refund manual.',
-                    'created_at' => now(),
+                $currentStatus = $locked->resolvedOrderStatus();
+                Log::warning('[Midtrans] Transisi settlement diabaikan', [
+                    'order' => $locked->order_code,
+                    'trx' => $trxStatus,
+                    'current' => $currentStatus,
                 ]);
-            } elseif ($currentStatus !== 'dibatalkan' && $fresh->resolvedPaymentStatus() !== 'dibayar') {
-                $fresh->update(['payment_status' => 'dibayar']);
-            }
 
-            return $fresh->fresh();
+                if ($payment) {
+                    $paymentUpdates = [
+                        'transaction_status' => 'settlement',
+                        'paid_at' => $payment->paid_at ?? now(),
+                    ];
+                    if ($payload !== null) {
+                        $paymentUpdates['payload_response'] = $payload;
+                    }
+                    $payment->update($paymentUpdates);
+                }
+
+                if ($currentStatus === 'dibatalkan' && $locked->resolvedPaymentStatus() !== 'dibayar') {
+                    $locked->update(['payment_status' => 'dibayar']);
+                    $locked->statusLogs()->create([
+                        'from_status' => 'dibatalkan',
+                        'to_status' => 'dibatalkan',
+                        'actor_type' => 'midtrans',
+                        'actor_name' => $actorName,
+                        'tracking_number' => $locked->tracking_number,
+                        'note' => 'Pembayaran settlement diterima setelah pesanan dibatalkan — perlu refund manual.',
+                        'created_at' => now(),
+                    ]);
+                } elseif ($currentStatus !== 'dibatalkan' && $locked->resolvedPaymentStatus() !== 'dibayar') {
+                    $locked->update(['payment_status' => 'dibayar']);
+                }
+
+                return $locked->fresh();
+            });
         }
     }
 
-    private function applyMidtransCancellation(Pesanan $order, string $trxStatus, string $actorName, string $note): Pesanan
-    {
+    /**
+     * @param  array<string, mixed>|null  $payload
+     * @return array{0: Pesanan, 1: bool}
+     */
+    private function applyMidtransCancellation(
+        Pesanan $order,
+        ?Pembayaran $payment,
+        string $trxStatus,
+        string $actorName,
+        string $note,
+        ?array $payload = null,
+    ): array {
         try {
-            return $this->orderStatusService->transition($order, 'dibatalkan', [
+            $updatedOrder = $this->orderStatusService->transition($order, 'dibatalkan', [
                 'actor_type' => 'midtrans',
                 'actor_name' => $actorName,
                 'payment_status' => 'kadaluarsa',
                 'note' => $note,
                 'idempotent' => true,
             ]);
+
+            if ($payment && $payment->transaction_status !== 'settlement') {
+                $paymentUpdates = [
+                    'transaction_status' => $trxStatus,
+                ];
+                if ($payload !== null) {
+                    $paymentUpdates['payload_response'] = $payload;
+                }
+                $payment->update($paymentUpdates);
+            }
+
+            return [$updatedOrder, true];
         } catch (ValidationException) {
             $fresh = $order->fresh();
             if (! $fresh) {
-                return $order;
+                return [$order, false];
             }
 
-            Log::warning('[Midtrans] Transisi pembatalan diabaikan karena pesanan sudah diproses/selesai', [
+            Log::warning('[Midtrans] Transisi pembatalan diabaikan karena pesanan sudah diproses/dibayar/selesai', [
                 'order' => $fresh->order_code,
                 'trx' => $trxStatus,
                 'current' => $fresh->resolvedOrderStatus(),
             ]);
 
-            return $fresh;
+            return [$fresh, false];
         }
     }
 }

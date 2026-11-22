@@ -63,6 +63,7 @@ class ProdukController extends Controller
 
         if ($request->has('page')) {
             $paginated = $query->paginate($perPage);
+            collect($paginated->items())->each(fn (Produk $item) => $item->makeHidden(['base_price', 'price_warning']));
 
             return response()->json([
                 'message' => 'Daftar produk berhasil dimuat.',
@@ -78,6 +79,7 @@ class ProdukController extends Controller
 
         $limit = $request->has('per_page') ? $perPage : ($request->query('featured') ? 4 : 50);
         $products = $query->limit($limit)->get();
+        $products->each(fn (Produk $item) => $item->makeHidden(['base_price', 'price_warning']));
 
         return response()->json([
             'message' => 'Daftar produk berhasil dimuat.',
@@ -98,6 +100,8 @@ class ProdukController extends Controller
                 'message' => 'Produk tidak ditemukan atau sedang tidak aktif.',
             ], 404);
         }
+
+        $product->makeHidden(['base_price', 'price_warning']);
 
         return response()->json([
             'message' => 'Detail produk berhasil dimuat.',

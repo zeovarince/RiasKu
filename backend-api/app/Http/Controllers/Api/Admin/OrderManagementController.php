@@ -37,8 +37,22 @@ class OrderManagementController extends Controller
                 $query->where(function (Builder $sub) use ($normalizedStatus): void {
                     $sub->where('order_status', $normalizedStatus)
                         ->orWhere(function (Builder $legacy) use ($normalizedStatus): void {
-                            $legacy->whereNull('order_status')
-                                ->where('status', $normalizedStatus === 'menunggu_pembayaran' ? 'pending' : $normalizedStatus);
+                            $legacy->whereNull('order_status');
+                            if ($normalizedStatus === 'menunggu_pembayaran') {
+                                $legacy->where('status', 'pending')
+                                    ->where(function (Builder $pm): void {
+                                        $pm->whereNull('payment_method')->orWhere('payment_method', '!=', 'cod');
+                                    });
+                            } elseif ($normalizedStatus === 'diproses') {
+                                $legacy->where(function (Builder $dip): void {
+                                    $dip->where('status', 'diproses')
+                                        ->orWhere(function (Builder $codPending): void {
+                                            $codPending->where('status', 'pending')->where('payment_method', 'cod');
+                                        });
+                                });
+                            } else {
+                                $legacy->where('status', $normalizedStatus);
+                            }
                         });
                 });
             }

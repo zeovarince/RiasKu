@@ -10,11 +10,16 @@ export async function getOrderStatus(orderCode) {
     const response = await api.get(`/orders/${encodeURIComponent(orderCode)}/track`)
     return response.data.data ?? response.data
   } catch (err) {
-    if (err.response?.status === 404) {
-      const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
-      if (!token) throw err
-      const response = await api.get(`/orders/${encodeURIComponent(orderCode)}`)
-      return response.data.data ?? response.data
+    if (err.response?.status === 404 && /^\d+$/.test(String(orderCode).trim())) {
+      try {
+        const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+        const storedUser = JSON.parse(localStorage.getItem('riasku_user') || 'null')
+        if (!token || storedUser?.account_type !== 'pelanggan') throw err
+        const response = await api.get(`/orders/${encodeURIComponent(orderCode)}`)
+        return response.data.data ?? response.data
+      } catch {
+        throw err
+      }
     }
     throw err
   }

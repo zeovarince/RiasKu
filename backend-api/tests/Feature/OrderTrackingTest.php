@@ -80,6 +80,19 @@ test('PPL-21: public order tracking masks phone numbers safely, hides detail add
     $trackRes->assertJsonMissingPath('data.status_logs.0.actor_name')
         ->assertJsonMissingPath('data.status_logs.0.actor_id')
         ->assertJsonMissingPath('data.items.0.stock_deducted');
+
+    // Catatan internal verifikasi manual admin tidak boleh bocor pada endpoint publik /track
+    expect(json_encode($trackRes->json('data.status_logs')))
+        ->not->toContain('verifikasi manual oleh admin');
+
+    // Endpoint publik katalog dan detail pesanan pelanggan tidak boleh membocorkan base_price / price_warning
+    $pubProd = $this->getJson("/api/products/{$produk->id}")->assertOk();
+    $pubProd->assertJsonMissingPath('data.base_price')
+        ->assertJsonMissingPath('data.price_warning');
+
+    Sanctum::actingAs($customer);
+    $custOrder = $this->getJson("/api/orders/{$orderCode}")->assertOk();
+    $custOrder->assertJsonMissingPath('data.items.0.produk.base_price');
 });
 
 test('PPL-21: authenticated customer can filter their order list and confirm order completion safely', function () {
@@ -215,4 +228,17 @@ test('PPL-21 C1: prevents payment IDOR across customers and guards simulateSucce
     $this->postJson("/api/payments/{$paymentId}/simulate-pay")->assertForbidden();
 
     expect(Pembayaran::find($paymentId)->transaction_status)->toBe('pending');
+
+    // Batalkan pesanan -> simulate-pay dan createIntent pada pesanan dibatalkan wajib ditolak 422
+    config(['services.midtrans.server_key' => '']);
+    app()->forgetInstance(MidtransService::class);
+    $this->postJson('/api/payments/midtrans/webhook', [
+        'order_id' => $orderCode,
+        'status_code' => '407',
+        'gross_amount' => '47000.00',
+        'transaction_status' => 'expire',
+    ])->assertOk();
+
+    $this->postJson("/api/payments/{$paymentId}/simulate-pay")->assertStatus(422);
+    $this->postJson("/api/orders/{$orderCode}/payments")->assertStatus(422);
 });

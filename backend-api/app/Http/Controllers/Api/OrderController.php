@@ -42,8 +42,22 @@ class OrderController extends Controller
                 $query->where(function ($sub) use ($normalized): void {
                     $sub->where('order_status', $normalized)
                         ->orWhere(function ($legacy) use ($normalized): void {
-                            $legacy->whereNull('order_status')
-                                ->where('status', $normalized === 'menunggu_pembayaran' ? 'pending' : $normalized);
+                            $legacy->whereNull('order_status');
+                            if ($normalized === 'menunggu_pembayaran') {
+                                $legacy->where('status', 'pending')
+                                    ->where(function ($pm): void {
+                                        $pm->whereNull('payment_method')->orWhere('payment_method', '!=', 'cod');
+                                    });
+                            } elseif ($normalized === 'diproses') {
+                                $legacy->where(function ($dip): void {
+                                    $dip->where('status', 'diproses')
+                                        ->orWhere(function ($codPending): void {
+                                            $codPending->where('status', 'pending')->where('payment_method', 'cod');
+                                        });
+                                });
+                            } else {
+                                $legacy->where('status', $normalized);
+                            }
                         });
                 });
             }
@@ -65,7 +79,7 @@ class OrderController extends Controller
             ]);
         }
 
-        $orders = $query->get();
+        $orders = $query->limit(100)->get();
 
         return response()->json([
             'message' => 'Daftar pesanan berhasil dimuat.',
@@ -86,13 +100,40 @@ class OrderController extends Controller
             'courier' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
             'service' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
             'payment_method' => ['required', 'string', 'in:cod,online'],
-            'payment_channel' => ['required', 'string'],
+            'payment_channel' => ['required', 'string', 'max:50'],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['nullable', 'array'],
+            'items.*' => ['required', 'array'],
+            'items.*.produk_id' => ['required_without:items.*.product_id', 'integer', 'exists:produk,id'],
+            'items.*.product_id' => ['required_without:items.*.produk_id', 'integer', 'exists:produk,id'],
+            'items.*.produk_varian_id' => ['nullable', 'integer', 'exists:produk_varian,id'],
+            'items.*.variant_id' => ['nullable', 'integer', 'exists:produk_varian,id'],
+            'items.*.quantity' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        $normalizedChannel = strtolower(trim($validated['payment_channel']));
+        $validated['payment_channel'] = $normalizedChannel;
+
+        if ($validated['payment_method'] === 'online' && in_array($normalizedChannel, ['cash', 'cod'], true)) {
+            return response()->json([
+                'message' => 'Channel pembayaran tunai hanya berlaku untuk metode COD.',
+                'errors' => [
+                    'payment_channel' => ['Pilih channel pembayaran online (QRIS, VA, atau E-Wallet) untuk metode online.'],
+                ],
+            ], 422);
+        }
+
+        if ($validated['payment_method'] === 'cod' && ! in_array($normalizedChannel, ['cash', 'cod'], true)) {
+            return response()->json([
+                'message' => 'Channel pembayaran untuk metode COD harus berupa tunai (cash).',
+                'errors' => [
+                    'payment_channel' => ['Channel pembayaran COD tidak valid.'],
+                ],
+            ], 422);
+        }
+
         // PPL-20: Validasi Ketat COD Khusus Kota Surabaya
-        if ($validated['payment_method'] === 'cod' || $validated['payment_channel'] === 'cash' || $validated['payment_channel'] === 'cod') {
+        if ($validated['payment_method'] === 'cod') {
             $city = strtolower(trim($validated['shipping_city']));
             if (! str_contains($city, 'surabaya')) {
                 return response()->json([
@@ -132,10 +173,23 @@ class OrderController extends Controller
             $preparedItems = [];
             $shippingItems = [];
 
-            $indexedItems = [];
+            // Gabungkan item dengan pasangan (produk_id, produk_varian_id) yang sama agar batas stok & batas Pre-Order 99 pcs tidak bisa dilewati dengan baris duplikat.
+            $mergedByKey = [];
             foreach (array_values($orderItemsData) as $origIndex => $itemData) {
-                $indexedItems[] = ['index' => $origIndex, 'item' => $itemData];
+                $prodKey = (int) ($itemData['produk_id'] ?? $itemData['product_id'] ?? 0);
+                $varKey = (int) ($itemData['produk_varian_id'] ?? $itemData['variant_id'] ?? 0);
+                $qtyVal = max(1, (int) ($itemData['quantity'] ?? 1));
+                $compositeKey = "{$prodKey}:{$varKey}";
+
+                if (isset($mergedByKey[$compositeKey])) {
+                    $mergedByKey[$compositeKey]['item']['quantity'] = (int) ($mergedByKey[$compositeKey]['item']['quantity'] ?? 1) + $qtyVal;
+                } else {
+                    $normalizedItem = $itemData;
+                    $normalizedItem['quantity'] = $qtyVal;
+                    $mergedByKey[$compositeKey] = ['index' => $origIndex, 'item' => $normalizedItem];
+                }
             }
+            $indexedItems = array_values($mergedByKey);
 
             // Urutkan deterministik sebelum lockForUpdate agar urutan item berbeda tidak memicu deadlock MySQL.
             usort($indexedItems, static function (array $a, array $b): int {
@@ -247,7 +301,7 @@ class OrderController extends Controller
             $shippingZoneId = null;
             $destinationProvince = null;
             $destinationCity = $validated['shipping_city'];
-            $destinationDistrict = $validated['shipping_district'] ?? 'Surabaya';
+            $destinationDistrict = $validated['shipping_district'] ?? null;
             $destinationPostalCode = $validated['shipping_postal_code'] ?? null;
             $courier = null;
             $courierService = null;
@@ -519,7 +573,7 @@ class OrderController extends Controller
             'to_status' => $log->to_status,
             'actor_type' => $log->actor_type,
             'tracking_number' => $log->tracking_number,
-            'note' => $log->note,
+            'note' => OrderStatusService::publicNoteForLog($log),
             'created_at' => $log->created_at,
         ])->values();
 
@@ -544,7 +598,7 @@ class OrderController extends Controller
                 'tracking_number' => $order->tracking_number,
                 'order_status' => $resolvedStatus,
                 'status' => $resolvedStatus,
-                'payment_status' => $order->payment_status,
+                'payment_status' => $order->resolvedPaymentStatus(),
                 'payment_method' => $order->payment_method,
                 'payment_channel' => $order->payment_channel,
                 'subtotal' => $order->subtotal ?? $order->total_product_amount ?? 0,

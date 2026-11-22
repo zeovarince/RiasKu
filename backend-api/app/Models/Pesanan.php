@@ -135,6 +135,7 @@ class Pesanan extends Model
             $this->order_status = $this->status === 'pending'
                 ? ($this->isCodOrder() ? 'diproses' : 'menunggu_pembayaran')
                 : $this->status;
+            $this->status = $this->order_status;
         }
 
         if ($this->payment_status === 'pending' && ! $this->isCodOrder()) {

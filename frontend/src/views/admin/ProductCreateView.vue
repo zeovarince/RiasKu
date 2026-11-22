@@ -125,15 +125,16 @@ async function loadProduct() {
       initial_stock: p.total_stock || 0,
     }
 
-    if (p.varians && p.varians.length > 0) {
-      if (p.varians.length === 1 && p.varians[0].name === 'Standar') {
+    const activeVarians = (p.varians || []).filter((v) => v.is_active !== false)
+    if (activeVarians.length > 0) {
+      if (activeVarians.length === 1 && activeVarians[0].name === 'Standar') {
         useCustomVariants.value = false
-        form.value.initial_stock = p.varians[0].stock
-        originalInitialStock.value = p.varians[0].stock
+        form.value.initial_stock = activeVarians[0].stock
+        originalInitialStock.value = activeVarians[0].stock
       } else {
         useCustomVariants.value = true
         originalInitialStock.value = null
-        customVariants.value = p.varians.map(v => ({
+        customVariants.value = activeVarians.map(v => ({
           id: v.id,
           name: v.name,
           stock: v.stock,
@@ -142,6 +143,8 @@ async function loadProduct() {
         }))
       }
     } else {
+      useCustomVariants.value = false
+      form.value.initial_stock = p.total_stock || 0
       originalInitialStock.value = p.total_stock || 0
     }
 

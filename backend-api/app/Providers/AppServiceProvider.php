@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Kategori;
+use App\Models\Pelanggan;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
 use App\Models\TarifPengiriman;
@@ -43,10 +44,14 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $resolveAiLimiterKey = static function (Request $request): string {
-            $sanctumId = Auth::guard('sanctum')->id();
+            $sanctumUser = Auth::guard('sanctum')->user();
 
-            if ($sanctumId !== null) {
-                return 'cust:'.$sanctumId;
+            if ($sanctumUser instanceof Pelanggan) {
+                return 'cust:'.$sanctumUser->id;
+            }
+
+            if ($sanctumUser !== null) {
+                return 'user:'.class_basename($sanctumUser).':'.$sanctumUser->getAuthIdentifier();
             }
 
             return 'ip:'.(string) $request->ip();

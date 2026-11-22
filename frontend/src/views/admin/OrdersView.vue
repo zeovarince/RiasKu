@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminBadge from './AdminBadge.vue'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
@@ -159,6 +159,10 @@ watch([activeStatus, selectedPaymentMethod, selectedOrderType], () => {
 
 onMounted(() => {
   fetchOrders(1)
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
 })
 </script>
 

@@ -82,11 +82,16 @@ const totalAmount = computed(() => {
   return Number(order.value?.total_amount ?? order.value?.total ?? 0)
 })
 
-const canCompleteOrder = computed(() => {
+const isOrderOwner = computed(() => {
   if (!isCustomerLoggedIn.value || !order.value) return false
+  return myOrderIds.value.has(order.value.order_code) || order.value.pelanggan_id === auth.user?.id
+})
+
+const canCompleteOrder = computed(() => {
+  if (!isOrderOwner.value) return false
   if (effectiveStatus.value !== 'dikirim') return false
   if (isCod.value && !isPaid.value) return false
-  return myOrderIds.value.has(order.value.order_code) || order.value.pelanggan_id === auth.user?.id
+  return true
 })
 
 const orderTimelineStep = computed(() => {
@@ -488,7 +493,7 @@ watch(isCustomerLoggedIn, (loggedIn) => {
           <p>
             Pembayaran Anda belum terkonfirmasi. Silakan selesaikan pembayaran melalui channel yang Anda pilih agar pesanan segera diproses.
           </p>
-          <div class="online-action-row" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+          <div v-if="isOrderOwner" class="online-action-row" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
             <button
               v-if="order.payment"
               class="button button-primary button-reopen-pay"
@@ -507,6 +512,9 @@ watch(isCustomerLoggedIn, (loggedIn) => {
               {{ isSyncing ? 'Memeriksa Midtrans...' : '🔄 Cek Status Midtrans' }}
             </button>
           </div>
+          <p v-else style="font-size: 0.82rem; margin-top: 0.65rem; color: #6b7280;">
+            Masuk dengan akun pemilik pesanan untuk membuka instruksi pembayaran Midtrans atau memeriksa status pembayaran.
+          </p>
           <p v-if="syncFeedback" class="sync-feedback-text" style="font-size: 0.8rem; margin-top: 0.5rem; color: #166534; font-weight: 600;">
             {{ syncFeedback }}
           </p>
@@ -578,7 +586,7 @@ watch(isCustomerLoggedIn, (loggedIn) => {
     </div>
 
     <PaymentModal
-      v-if="showPaymentModal && order && order.payment"
+      v-if="showPaymentModal && isOrderOwner && order && order.payment"
       :order="order"
       :payment="order.payment"
       @close="showPaymentModal = false"

@@ -204,7 +204,7 @@ class ProdukController extends Controller
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
             'varians' => ['nullable', 'array', 'min:1'],
-            'varians.*.id' => ['nullable', 'integer'],
+            'varians.*.id' => ['nullable', 'integer', 'distinct'],
             'varians.*.name' => ['required_with:varians', 'string', 'max:100'],
             'varians.*.stock' => ['required_with:varians', 'integer', 'min:0'],
             'varians.*.original_stock' => ['nullable', 'integer', 'min:0'],
@@ -280,7 +280,7 @@ class ProdukController extends Controller
             } elseif ($hasInitialStock) {
                 $this->syncStandardVariant($produk, (int) $initialStock, $originalInitialStock);
             }
-        });
+        }, 3);
 
         $produk->refresh();
         $produk->load(['kategori', 'varians', 'fotos', 'primaryFoto'])
@@ -321,7 +321,7 @@ class ProdukController extends Controller
      */
     private function syncCustomVariants(Produk $produk, array $variansData): void
     {
-        $existing = $produk->varians()->lockForUpdate()->get();
+        $existing = $produk->varians()->orderBy('id')->lockForUpdate()->get();
         $keptIds = [];
 
         foreach ($variansData as $item) {
@@ -381,7 +381,7 @@ class ProdukController extends Controller
 
     private function syncStandardVariant(Produk $produk, int $stock, ?int $originalStock = null): void
     {
-        $existing = $produk->varians()->lockForUpdate()->get();
+        $existing = $produk->varians()->orderBy('id')->lockForUpdate()->get();
         $standard = $existing->first(
             fn (ProdukVarian $v): bool => strtolower(trim($v->name)) === 'standar'
         ) ?? ($existing->count() === 1 ? $existing->first() : null);

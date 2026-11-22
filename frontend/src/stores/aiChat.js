@@ -127,6 +127,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
     if (inFlightInit && !force) return inFlightInit
 
     const startVersion = mutationVersion
+    const startLogoutVersion = logoutVersion
     const tokenAtStart = sessionToken.value
     const tokensAtStart = readGuestTokens()
     isHydrating.value = true
@@ -141,6 +142,11 @@ export const useAiChatStore = defineStore('aiChat', () => {
           getAiStatus().catch(() => null),
         ])
 
+        // Abaikan seluruh hasil jika terjadi logout saat init berjalan agar sesi privat tidak bocor kembali.
+        if (logoutVersion !== startLogoutVersion) {
+          return
+        }
+
         if (Array.isArray(suggestionList) && suggestionList.length > 0) {
           suggestions.value = suggestionList
         }
@@ -149,12 +155,12 @@ export const useAiChatStore = defineStore('aiChat', () => {
           aiStatus.value = statusData
         }
 
-        if (Array.isArray(sessionList)) {
-          sessions.value = sessionList
-        }
-
-        // Jangan menimpa percakapan jika pengguna sudah mengirim/mereset pesan saat init berjalan.
+        // Jangan menimpa percakapan atau daftar sesi jika pengguna sudah mengirim/mereset/pindah sesi saat init berjalan.
         if (mutationVersion === startVersion) {
+          if (Array.isArray(sessionList)) {
+            sessions.value = sessionList
+          }
+
           if (historyData?.session_token) {
             sessionToken.value = historyData.session_token
             saveStoredToken(historyData.session_token)
@@ -174,7 +180,9 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
         isInitialized.value = true
       } finally {
-        isHydrating.value = false
+        if (mutationVersion === startVersion && logoutVersion === startLogoutVersion) {
+          isHydrating.value = false
+        }
         if (inFlightInit === task) {
           inFlightInit = null
         }
@@ -183,6 +191,11 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
     inFlightInit = task
     return task
+  }
+
+  function invalidateInit() {
+    isInitialized.value = false
+    inFlightInit = null
   }
 
   function startNewChat() {
@@ -274,16 +287,27 @@ export const useAiChatStore = defineStore('aiChat', () => {
 
   async function deleteSession(targetToken) {
     if (!targetToken) return false
-    clearedSessionTokens.add(targetToken)
+    error.value = ''
     try {
       await deleteAiSession(targetToken)
+      clearedSessionTokens.add(targetToken)
       removeGuestToken(targetToken)
       sessions.value = sessions.value.filter((s) => s.session_token !== targetToken)
       if (sessionToken.value === targetToken) {
         startNewChat()
       }
       return true
-    } catch {
+    } catch (err) {
+      if (err.response?.status === 404) {
+        clearedSessionTokens.add(targetToken)
+        removeGuestToken(targetToken)
+        sessions.value = sessions.value.filter((s) => s.session_token !== targetToken)
+        if (sessionToken.value === targetToken) {
+          startNewChat()
+        }
+        return true
+      }
+      error.value = err.response?.data?.message || 'Gagal menghapus sesi percakapan. Silakan coba lagi.'
       return false
     }
   }
@@ -435,6 +459,7 @@ export const useAiChatStore = defineStore('aiChat', () => {
     lastProvider,
     lastModel,
     initSession,
+    invalidateInit,
     fetchSessions,
     startNewChat,
     clearAllSessionsLocal,

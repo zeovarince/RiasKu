@@ -47,8 +47,11 @@ onMounted(() => cart.hydrateCart())
             <span v-if="item.is_preorder_item" class="stock-pill pill-preorder">
               Pre-Order{{ item.preorder_estimate_days ? ` · Est. ${item.preorder_estimate_days} hari` : '' }}
             </span>
-            <span v-else class="stock-pill pill-ready">
-              Tersedia (Stok {{ item.stock ?? 0 }})
+            <span v-else-if="Number(item.stock ?? 0) > 0" class="stock-pill pill-ready">
+              Tersedia (Stok {{ item.stock }})
+            </span>
+            <span v-else class="stock-pill pill-empty">
+              Stok Habis
             </span>
             <strong>{{ formatRupiah(item.price) }}</strong>
           </div>

@@ -19,7 +19,26 @@ class OrderStatusService
     {
         $relations = [
             'items.produk' => function ($query): void {
-                $query->with(['kategori:id,name,slug', 'activeVarians', 'primaryFoto'])
+                $query->select([
+                    'id',
+                    'kategori_id',
+                    'sku',
+                    'name',
+                    'brand',
+                    'weight_grams',
+                    'retail_price',
+                    'pack_quantity',
+                    'pack_price',
+                    'is_preorder',
+                    'preorder_estimate_days',
+                    'short_ingredients',
+                    'bpom_number',
+                    'description',
+                    'is_active',
+                    'created_at',
+                    'updated_at',
+                ])
+                    ->with(['kategori:id,name,slug', 'activeVarians', 'primaryFoto'])
                     ->withSum(['activeVarians as active_stock_sum'], 'stock');
             },
             'latestPembayaran',
@@ -131,6 +150,16 @@ class OrderStatusService
 
             $isPaid = $locked->resolvedPaymentStatus() === 'dibayar';
             $isAdminActor = ($context['actor_type'] ?? '') === 'admin';
+            $isMidtransActor = ($context['actor_type'] ?? '') === 'midtrans';
+
+            if ($isMidtransActor && $target === 'dibatalkan') {
+                if ($currentStatus !== 'menunggu_pembayaran' || $isPaid || $locked->isCodOrder()) {
+                    throw ValidationException::withMessages([
+                        'status' => ["Webhook Midtrans tidak dapat membatalkan pesanan pada status {$currentStatus}."],
+                    ]);
+                }
+            }
+
             $requiresManualPaymentVerification = $currentStatus === 'menunggu_pembayaran'
                 && $target === 'diproses'
                 && ! $isPaid
@@ -231,6 +260,10 @@ class OrderStatusService
                 ]);
             }
 
+            if ($fromStatus === 'selesai' && $locked->resolvedPaymentStatus() === 'dibayar') {
+                return $locked->fresh(self::orderRelations(true));
+            }
+
             $actorType = (string) ($context['actor_type'] ?? 'admin');
             $actorId = $context['actor_id'] ?? null;
             $actorName = $context['actor_name'] ?? 'Admin';
@@ -245,7 +278,7 @@ class OrderStatusService
             if ($payment) {
                 $payment->update([
                     'transaction_status' => 'settlement',
-                    'paid_at' => now(),
+                    'paid_at' => $payment->paid_at ?? now(),
                 ]);
             } else {
                 Pembayaran::create([
@@ -314,6 +347,39 @@ class OrderStatusService
                 $item->update(['stock_deducted' => false]);
             }
         }
+    }
+
+    public static function publicNoteForLog(PesananStatusLog $log): string
+    {
+        $rawNote = trim((string) ($log->note ?? ''));
+        $lower = strtolower($rawNote);
+
+        // Jangan ekspos catatan internal admin atau catatan refund/verifikasi manual pada endpoint publik
+        if (
+            $log->actor_type === 'admin'
+            || str_contains($lower, 'perlu refund')
+            || str_contains($lower, 'verifikasi pembayaran manual')
+            || str_contains($lower, 'bukti transfer')
+        ) {
+            if ($log->from_status === 'dikirim' && $log->to_status === 'dikirim') {
+                return $log->tracking_number
+                    ? "Nomor resi diperbarui: {$log->tracking_number}."
+                    : 'Informasi pengiriman diperbarui.';
+            }
+
+            return match ($log->to_status) {
+                'menunggu_pembayaran' => 'Pesanan dibuat, menunggu pembayaran.',
+                'diproses' => 'Pesanan sedang diproses oleh tim RiasKu.',
+                'dikirim' => $log->tracking_number
+                    ? "Paket diserahkan ke kurir dengan nomor resi {$log->tracking_number}."
+                    : 'Paket sedang dikirim menuju alamat penerima.',
+                'selesai' => 'Pesanan telah selesai.',
+                'dibatalkan' => 'Pesanan dibatalkan.',
+                default => 'Status pesanan diperbarui.',
+            };
+        }
+
+        return $rawNote !== '' ? $rawNote : 'Status pesanan diperbarui.';
     }
 
     private function defaultNoteFor(string $fromStatus, string $toStatus, ?string $trackingNumber): string

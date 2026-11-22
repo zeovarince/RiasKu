@@ -130,7 +130,7 @@ async function handleSend(textOverride = null) {
   const trimmed = String(raw || '').trim()
   if (trimmed.length < 2 || aiChat.isLoading) return
 
-  voice.stopListening()
+  voice.abortListening()
   voice.clearVoiceError()
 
   if (!textOverride) {
@@ -173,7 +173,7 @@ function handleMicToggle() {
 }
 
 function handleStartNewChat() {
-  voice.stopListening()
+  voice.abortListening()
   voice.clearVoiceError()
   aiChat.startNewChat()
   mobileSidebarOpen.value = false
@@ -181,7 +181,7 @@ function handleStartNewChat() {
 }
 
 async function handleSelectSession(token) {
-  voice.stopListening()
+  voice.abortListening()
   voice.clearVoiceError()
   await aiChat.selectSession(token)
   mobileSidebarOpen.value = false
@@ -439,7 +439,7 @@ onMounted(async () => {
           <button
             type="button"
             class="ai-toolbar-btn"
-            @click="aiChat.resetSession()"
+            @click="handleStartNewChat"
           >
             ↺ Percakapan Baru
           </button>

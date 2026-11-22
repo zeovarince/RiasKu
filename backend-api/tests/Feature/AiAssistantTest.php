@@ -757,3 +757,101 @@ test('PPL-28 M5 & N-L8: flushes catalog cache only after DB transaction commits'
     $snap3 = $ctxService->getCatalogSnapshot();
     expect($snap3['products'][0]['total_stock'])->toBe(2);
 });
+
+test('PPL-28 security hardening: blocks session fixation, strips order PII from multi-turn LLM history, and survives non-string LLM reply', function () {
+    [$cushion] = seedAiCatalog();
+    $customer = Pelanggan::create([
+        'username' => 'ai_pii_cust',
+        'email' => 'ai_pii_cust@riasku.test',
+        'password_hash' => bcrypt('password123'),
+        'is_active' => true,
+    ]);
+
+    Pesanan::create([
+        'pelanggan_id' => $customer->id,
+        'order_code' => 'RSK-20261122-PII01',
+        'customer_name' => 'Rahasia PII',
+        'customer_phone' => '081234567890',
+        'shipping_address' => 'Jl. Rahasia 1',
+        'shipping_city' => 'Kota Surabaya',
+        'shipping_courier' => 'JNE REG',
+        'tracking_number' => 'JNE-SECRET-9988',
+        'payment_method' => 'online',
+        'payment_channel' => 'qris',
+        'payment_status' => 'dibayar',
+        'order_status' => 'dikirim',
+        'total_product_amount' => 185000,
+        'total_amount' => 185000,
+    ]);
+
+    config([
+        'services.ai_assistant.provider' => 'gemini',
+        'services.ai_assistant.provider_chain' => ['gemini'],
+        'services.ai_assistant.gemini_api_key' => 'AIza-pii-guard-key',
+        'services.ai_assistant.gemini_model' => 'gemini-2.5-flash',
+        'services.ai_assistant.gemini_fallback_models' => [],
+        'services.ai_assistant.cooldown_seconds' => 0,
+        'services.ai_assistant.catalog_cache_ttl' => 0,
+    ]);
+
+    // 1. Session fixation check: UUID fiktif dari klien tidak boleh dijadikan token sesi di server
+    $fixationUuid = '00000000-0000-0000-0000-000000000001';
+    Sanctum::actingAs($customer);
+    $turn1 = $this->postJson('/api/ai/chat', [
+        'session_token' => $fixationUuid,
+        'message' => 'Tolong cek status pesanan RSK-20261122-PII01',
+    ])->assertOk();
+
+    $sessionToken = $turn1->json('data.session_token');
+    expect($sessionToken)->not->toBe($fixationUuid)
+        ->and($turn1->json('data.message.content'))->toContain('JNE-SECRET-9988');
+
+    // 2. Turn 2 di sesi yang sama ke Gemini -> riwayat RSK & resi dari Turn 1 TIDAK boleh ikut dikirim ke LLM eksternal!
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => json_encode([
+                        'reply' => 'Velvet Matte Cushion SPF 35 cocok untuk kulit kombinasi.',
+                        'recommended_product_ids' => [$cushion->id, ['bad' => 1]],
+                        'follow_up_suggestions' => ['Cek shade'],
+                    ])]]],
+                ]],
+            ], 200)
+            // Turn 3: LLM mengembalikan reply non-string (array) -> wajib failover lokal tanpa 500!
+            ->push([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => json_encode([
+                        'reply' => ['broken' => 'array'],
+                        'recommended_product_ids' => [],
+                        'follow_up_suggestions' => [],
+                    ])]]],
+                ]],
+            ], 200),
+    ]);
+
+    $turn2 = $this->postJson('/api/ai/chat', [
+        'session_token' => $sessionToken,
+        'message' => 'Cushion untuk kulit kombinasi apa ya?',
+    ])->assertOk();
+
+    expect($turn2->json('data.message.provider'))->toBe('gemini')
+        ->and($turn2->json('data.message.recommended_products'))->toHaveCount(1);
+
+    Http::assertSent(function ($request): bool {
+        $body = (string) json_encode($request->data());
+
+        return str_contains($request->url(), 'generativelanguage.googleapis.com')
+            && ! str_contains($body, 'RSK-20261122-PII01')
+            && ! str_contains($body, 'JNE-SECRET-9988');
+    });
+
+    // 3. Non-string reply dari LLM harus fallback ke local engine (bukan HTTP 500)
+    $turn3 = $this->postJson('/api/ai/chat', [
+        'session_token' => $sessionToken,
+        'message' => 'Apakah bisa bayar COD Surabaya?',
+    ])->assertOk();
+
+    expect($turn3->json('data.message.provider'))->toBe('fallback')
+        ->and($turn3->json('data.message.content'))->toContain('Kota Surabaya');
+});

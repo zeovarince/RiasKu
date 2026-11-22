@@ -39,7 +39,7 @@ class AiAssistantService
         }
 
         return AiChatSession::create([
-            'session_token' => $sessionToken ?: (string) Str::uuid(),
+            'session_token' => (string) Str::uuid(),
             'pelanggan_id' => $customer?->id,
             'last_message_at' => now(),
         ]);
@@ -291,7 +291,11 @@ class AiAssistantService
         }
 
         $messages = $session->messages()
+            ->reorder('id', 'desc')
+            ->limit(100)
             ->get()
+            ->reverse()
+            ->values()
             ->map(fn (AiChatMessage $m): array => [
                 'id' => $m->id,
                 'role' => $m->role,
@@ -543,6 +547,16 @@ class AiAssistantService
                 continue;
             }
 
+            // Jangan pernah meneruskan riwayat pelacakan pesanan / kode RSK-... / PII ke penyedia LLM eksternal
+            if (
+                preg_match('/\bRSK-[A-Z0-9-]{4,}\b/i', $text) === 1
+                || str_contains($text, 'Berikut informasi pelacakan pesanan kamu:')
+                || str_contains($text, 'Pesanan **RSK-')
+                || str_contains($text, 'Akun pengguna ini belum memiliki riwayat pesanan di RiasKu.')
+            ) {
+                continue;
+            }
+
             if ($role === 'assistant' && is_array($item->recommended_products) && ! empty($item->recommended_products)) {
                 $recSummary = collect($item->recommended_products)
                     ->map(fn (array $p): string => ($p['name'] ?? 'Produk').' (ID:'.($p['id'] ?? 0).')')
@@ -690,10 +704,15 @@ class AiAssistantService
                 'content' => $turn['content'],
             ];
         }
-        $messages[] = [
-            'role' => 'user',
-            'content' => $message,
-        ];
+        $lastIdx = count($messages) - 1;
+        if ($lastIdx >= 1 && $messages[$lastIdx]['role'] === 'user') {
+            $messages[$lastIdx]['content'] .= "\n".$message;
+        } else {
+            $messages[] = [
+                'role' => 'user',
+                'content' => $message,
+            ];
+        }
 
         $endpoint = "{$baseUrl}/chat/completions";
 
@@ -751,11 +770,11 @@ class AiAssistantService
         $cleanJson = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($rawText));
         $decoded = json_decode((string) $cleanJson, true);
 
-        if ((! is_array($decoded) || empty($decoded['reply'])) && preg_match('/\{[\s\S]*\}/', (string) $cleanJson, $matches)) {
+        if ((! is_array($decoded) || ! is_string($decoded['reply'] ?? null) || trim($decoded['reply']) === '') && preg_match('/\{[\s\S]*\}/', (string) $cleanJson, $matches)) {
             $decoded = json_decode($matches[0], true);
         }
 
-        if (! is_array($decoded) || empty($decoded['reply'])) {
+        if (! is_array($decoded) || ! is_string($decoded['reply'] ?? null) || trim($decoded['reply']) === '') {
             return null;
         }
 
@@ -834,7 +853,7 @@ PROMPT;
                 /** @var Pesanan $order */
                 $resi = $order->tracking_number ? " | Resi: `{$order->tracking_number}`" : '';
 
-                return "• Pesanan **{$order->order_code}**: status **{$order->resolvedOrderStatus()}** | bayar **{$order->payment_status}**{$resi} | total **Rp".number_format((int) ($order->total_amount ?? $order->total ?? 0), 0, ',', '.').'**';
+                return "• Pesanan **{$order->order_code}**: status **{$order->resolvedOrderStatus()}** | bayar **{$order->resolvedPaymentStatus()}**{$resi} | total **Rp".number_format((int) ($order->total_amount ?? $order->total ?? 0), 0, ',', '.').'**';
             })->implode("\n");
         }
 
@@ -997,6 +1016,15 @@ PROMPT;
                     ],
                 ];
             }
+
+            return [
+                'reply' => 'Saat ini belum ada produk yang berstatus **Pre-Order** di katalog RiasKu. Kamu bisa melihat produk yang **Tersedia (Ready Stock)** dan siap dikirim hari ini.',
+                'recommended_product_ids' => [],
+                'follow_up_suggestions' => [
+                    'Tampilkan produk yang ready stock',
+                    'Bagaimana cara bayar COD Surabaya?',
+                ],
+            ];
         }
 
         // 9b. Intent Ready Stock / Produk Tersedia
@@ -1121,9 +1149,12 @@ PROMPT;
                 ->take(3)
                 ->values();
             $summaryLines = $availableProducts->map(fn (array $p): string => $this->formatDetailedProductBullet($p))->implode("\n");
+            $altSection = $summaryLines !== ''
+                ? " Di database RiasKu saat ini kami hanya menyediakan lini produk & layanan resmi **RiasKu** berikut sebagai alternatif:\n{$summaryLines}"
+                : ' Silakan cek halaman katalog `/products` untuk melihat lini produk resmi **RiasKu** yang tersedia.';
 
             return [
-                'reply' => "Maaf, saat ini produk atau merek **`{$queriedTerm}`** tidak tersedia di dalam database katalog **RiasKu**. Di database RiasKu saat ini kami hanya menyediakan lini produk & layanan resmi **RiasKu** berikut sebagai alternatif:\n{$summaryLines}",
+                'reply' => "Maaf, saat ini produk atau merek **`{$queriedTerm}`** tidak tersedia di dalam database katalog **RiasKu**.{$altSection}",
                 'recommended_product_ids' => [],
                 'follow_up_suggestions' => [
                     'Tampilkan produk yang ready stock',

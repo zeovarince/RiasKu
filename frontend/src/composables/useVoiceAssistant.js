@@ -15,6 +15,24 @@ export function useVoiceAssistant() {
     voiceError.value = ''
   }
 
+  function abortListening() {
+    const active = recognition
+    recognition = null
+    interimTranscript.value = ''
+    isListening.value = false
+    if (active) {
+      active.onstart = null
+      active.onresult = null
+      active.onerror = null
+      active.onend = null
+      try {
+        active.abort()
+      } catch {
+        // Ignore browser abort errors when recognition already ended
+      }
+    }
+  }
+
   function stopListening() {
     if (recognition) {
       try {
@@ -33,7 +51,7 @@ export function useVoiceAssistant() {
       return false
     }
 
-    stopListening()
+    abortListening()
 
     try {
       const rec = new SpeechRec()
@@ -45,11 +63,17 @@ export function useVoiceAssistant() {
       let finalCaptured = ''
 
       rec.onstart = () => {
+        if (recognition !== rec) {
+          return
+        }
         isListening.value = true
         interimTranscript.value = ''
       }
 
       rec.onresult = (event) => {
+        if (recognition !== rec) {
+          return
+        }
         let interim = ''
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const piece = event.results[i][0]?.transcript || ''
@@ -93,10 +117,11 @@ export function useVoiceAssistant() {
       }
 
       rec.onend = () => {
-        if (recognition === rec) {
-          isListening.value = false
-          recognition = null
+        if (recognition !== rec) {
+          return
         }
+        isListening.value = false
+        recognition = null
         const finalText = (finalCaptured || interimTranscript.value || '').trim()
         interimTranscript.value = ''
         if (finalText && typeof onFinal === 'function') {
@@ -118,7 +143,7 @@ export function useVoiceAssistant() {
   }
 
   onBeforeUnmount(() => {
-    stopListening()
+    abortListening()
   })
 
   return {
@@ -129,5 +154,6 @@ export function useVoiceAssistant() {
     clearVoiceError,
     startListening,
     stopListening,
+    abortListening,
   }
 }

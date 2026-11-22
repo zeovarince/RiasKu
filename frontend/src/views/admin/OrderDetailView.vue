@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminBadge from './AdminBadge.vue'
@@ -286,6 +286,12 @@ async function handleConfirmCodPayment() {
 
 onMounted(() => {
   fetchOrderDetail()
+})
+
+watch(orderId, (nextId, prevId) => {
+  if (nextId && nextId !== prevId) {
+    fetchOrderDetail()
+  }
 })
 </script>
 
@@ -577,7 +583,7 @@ onMounted(() => {
             <!-- PPL-20: Tombol Konfirmasi Uang Tunai Diterima untuk COD Surabaya -->
             <div v-if="isCod && currentOrderStatus !== 'dibatalkan'" style="margin-top: 1rem;">
               <button
-                v-if="!isPaid && currentOrderStatus === 'dikirim'"
+                v-if="!isPaid && ['dikirim', 'selesai'].includes(currentOrderStatus)"
                 class="admin-btn admin-btn-primary admin-submit"
                 type="button"
                 :disabled="isConfirmingCod"

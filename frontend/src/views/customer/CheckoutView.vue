@@ -104,7 +104,11 @@ const maxPreorderDays = computed(() => {
 })
 
 const subtotalAmount = computed(() => {
-  if (quote.value?.subtotal !== undefined && quote.value?.subtotal !== null) {
+  if (
+    quote.value?.subtotal !== undefined
+    && quote.value?.subtotal !== null
+    && rateItemPayload.value.length === cart.items.length
+  ) {
     return Number(quote.value.subtotal)
   }
   return Number(cart.subtotal || 0)
@@ -181,7 +185,13 @@ async function loadShippingQuote() {
   shippingError.value = ''
   loadingRates.value = false
 
-  if (!selectedZone.value || rateItemPayload.value.length === 0) return
+  if (!selectedZone.value) return
+  if (rateItemPayload.value.length === 0) {
+    if (cart.items.length > 0) {
+      shippingError.value = 'Sebagian item keranjang belum memiliki varian valid. Mohon perbarui keranjang belanja Anda.'
+    }
+    return
+  }
 
   loadingRates.value = true
   try {
@@ -336,7 +346,7 @@ async function submitCheckout() {
     customer_phone: buyer.value.phone.trim(),
     shipping_address: buyer.value.address.trim(),
     shipping_city: selectedZone.value?.city || buyer.value.city,
-    shipping_district: selectedZone.value?.district || cleanDistrict || 'Surabaya',
+    shipping_district: selectedZone.value?.district || cleanDistrict || null,
     shipping_postal_code: selectedZone.value?.postal_code || cleanPostal || null,
     ...(selectedZone.value && selectedRate.value ? {
       destination_zone_id: selectedZone.value.id,

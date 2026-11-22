@@ -237,6 +237,7 @@ class AiCatalogContextService
     public function hydrateRecommendedProducts(array $productIds): array
     {
         $cleanIds = collect($productIds)
+            ->filter(fn ($id): bool => is_int($id) || (is_string($id) && ctype_digit(trim($id))))
             ->map(fn ($id): int => (int) $id)
             ->filter(fn (int $id): bool => $id > 0)
             ->unique()

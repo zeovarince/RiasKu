@@ -17,7 +17,10 @@ class CartController extends Controller
         $varian = $item->varian;
         $unitPrice = $produk ? (int) ($produk->retail_price ?? 0) : 0;
         $variantStock = $varian ? (int) $varian->stock : ($produk ? (int) $produk->total_stock : 0);
-        $isPreorderItem = $produk ? ($variantStock <= 0 && (bool) $produk->is_preorder) : false;
+        $isActiveVariant = $varian ? (bool) $varian->is_active : true;
+        $isPreorderItem = $produk
+            ? ((bool) $produk->is_active && $isActiveVariant && $variantStock <= 0 && (bool) $produk->is_preorder)
+            : false;
         $stockLabel = $varian
             ? $varian->resolveStockLabel((bool) $produk?->is_preorder)
             : ($produk?->stock_label ?? 'Stok Habis');

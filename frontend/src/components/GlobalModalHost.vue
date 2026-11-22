@@ -72,6 +72,14 @@ async function submitAuth() {
   }
 }
 
+function toggleReviewTag(tag) {
+  if (reviewTags.value.includes(tag)) {
+    reviewTags.value = reviewTags.value.filter((item) => item !== tag)
+  } else {
+    reviewTags.value = [...reviewTags.value, tag]
+  }
+}
+
 function submitReview() {
   if (!reviewText.value.trim()) return
   reviewSubmitted.value = true
