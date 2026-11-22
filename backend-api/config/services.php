@@ -54,4 +54,32 @@ return [
         'base_url' => env('MIDTRANS_BASE_URL', 'https://api.sandbox.midtrans.com'),
     ],
 
+    'ai_assistant' => [
+        'provider' => env('AI_PROVIDER', 'gemini'),
+        'provider_chain' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('AI_PROVIDER_CHAIN', 'gemini,groq,openrouter'))
+        ))),
+        'local_engine_enabled' => (bool) env('AI_LOCAL_ENGINE', true),
+        'local_engine_model' => env('AI_LOCAL_MODEL', 'riasku-smart-local-v2'),
+        'gemini_api_key' => env('GEMINI_API_KEY', ''),
+        'gemini_model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        'gemini_fallback_models' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('GEMINI_FALLBACK_MODELS', 'gemini-2.5-flash-lite,gemini-2.0-flash'))
+        ))),
+        'groq_api_key' => env('GROQ_API_KEY', ''),
+        'groq_model' => env('GROQ_MODEL', 'openai/gpt-oss-120b'),
+        'groq_base_url' => env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
+        'openrouter_api_key' => env('OPENROUTER_API_KEY', ''),
+        'openrouter_model' => env('OPENROUTER_MODEL', 'nvidia/nemotron-3-ultra-550b-a55b:free'),
+        'openrouter_base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
+        'cooldown_seconds' => (int) env('AI_RATE_LIMIT_COOLDOWN', 60),
+        'error_cooldown_seconds' => (int) env('AI_ERROR_COOLDOWN', 30),
+        'timeout' => (int) env('AI_TIMEOUT', 20),
+        'total_budget_seconds' => (int) env('AI_TOTAL_BUDGET', 25),
+        'max_history_messages' => (int) env('AI_MAX_HISTORY', 10),
+        'catalog_cache_ttl' => (int) env('AI_CATALOG_CACHE_TTL', 300),
+    ],
+
 ];

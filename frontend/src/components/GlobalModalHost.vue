@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
 import { login as loginRequest, register as registerRequest } from '@/services/authService'
+import AiChatPanel from '@/components/AiChatPanel.vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 
 const ui = useUiStore()
@@ -13,10 +14,6 @@ const authForm = ref({ name: '', email: '', password: '' })
 const authError = ref('')
 const authNotice = ref('')
 const authLoading = ref(false)
-const chatQuestion = ref('')
-const chatMessages = ref([
-  { role: 'assistant', text: 'Halo, selamat datang di RiasKu Studio. Mau kami bantu menemukan produk kosmetik atau layanan rias yang sesuai kebutuhanmu?' },
-])
 const reviewRating = ref(5)
 const reviewText = ref('')
 const reviewTags = ref(['Tahan Seharian'])
@@ -75,20 +72,6 @@ async function submitAuth() {
   }
 }
 
-function sendChat() {
-  const message = chatQuestion.value.trim()
-  if (!message) return
-  chatMessages.value.push({ role: 'user', text: message })
-  chatMessages.value.push({ role: 'assistant', text: 'Terima kasih! Asisten RiasKu akan terhubung ke endpoint AI setelah layanan backend disiapkan. Untuk sementara, kamu bisa menjelajahi katalog produk kami.' })
-  chatQuestion.value = ''
-}
-
-function toggleReviewTag(tag) {
-  reviewTags.value = reviewTags.value.includes(tag)
-    ? reviewTags.value.filter((item) => item !== tag)
-    : [...reviewTags.value, tag]
-}
-
 function submitReview() {
   if (!reviewText.value.trim()) return
   reviewSubmitted.value = true
@@ -107,21 +90,14 @@ function submitReview() {
               <div class="assistant-avatar">✦</div>
               <div>
                 <h2>Asisten Cerdas RiasKu</h2>
-                <p><span class="online-dot"></span> AI Beauty Advisor Surabaya</p>
+                <p><span class="online-dot"></span> AI Beauty Advisor · Multi-LLM &amp; Dikte Suara</p>
               </div>
             </div>
-            <div class="chat-suggestions">
-              <span>PERTANYAAN REKOMENDASI</span>
-              <button type="button" @click="chatQuestion = 'Cari cushion untuk kulit kombinasi'">Cushion untuk kulit kombinasi</button>
-              <button type="button" @click="chatQuestion = 'Rekomendasi rias wisuda'">Paket rias wisuda</button>
-            </div>
-            <div class="chat-messages modal-chat-messages" aria-live="polite">
-              <div v-for="(message, index) in chatMessages" :key="index" :class="['chat-bubble', message.role]">{{ message.text }}</div>
-            </div>
-            <form class="chat-composer" @submit.prevent="sendChat">
-              <input v-model="chatQuestion" class="form-control" placeholder="Ketik pertanyaan makeup / riasan..." aria-label="Pesan untuk asisten AI" />
-              <button class="button button-primary" type="submit" aria-label="Kirim pesan">➤</button>
-            </form>
+            <AiChatPanel
+              mode="modal"
+              :context-product-id="modal.payload?.productId || null"
+              :initial-prompt="modal.payload?.initialPrompt || ''"
+            />
           </template>
 
           <template v-else-if="modal.type === 'login' || modal.type === 'register'">

@@ -13,7 +13,6 @@ const route = useRoute()
 const router = useRouter()
 const searchQuery = ref('')
 const cartCount = computed(() => cart.totalItems)
-const isProductRoute = computed(() => route.path.startsWith('/products'))
 
 const isDropdownOpen = ref(false)
 const showProfileModal = ref(false)
@@ -79,15 +78,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="prototype-strip">
-    <div class="prototype-strip-inner">
-      <RouterLink to="/" class="step-pill" exact-active-class="active">1. Beranda</RouterLink>
-      <RouterLink to="/products/1" class="step-pill" :class="{ active: isProductRoute }">2. Detail Produk</RouterLink>
-      <RouterLink v-if="isCustomer" to="/checkout" class="step-pill" active-class="active">3. Checkout &amp; COD</RouterLink>
-      <RouterLink v-if="isCustomer" to="/orders/track" class="step-pill" active-class="active">4. Cek Status</RouterLink>
-    </div>
-  </div>
-
   <header class="site-header">
     <div class="site-header-inner">
       <RouterLink to="/" class="brand" aria-label="RiasKu beranda">RiasKu<span>.</span></RouterLink>
@@ -97,7 +87,7 @@ onUnmounted(() => {
         <RouterLink to="/products" active-class="is-active">Katalog Produk</RouterLink>
         <RouterLink to="/products/1" :class="{ 'is-active': route.path.startsWith('/products/') }">Detail Produk</RouterLink>
         <RouterLink v-if="isCustomer" to="/checkout" active-class="is-active">Checkout &amp; COD</RouterLink>
-        <RouterLink v-if="isCustomer" to="/orders/track" active-class="is-active">Cek Pesanan</RouterLink>
+        <RouterLink to="/orders/track" active-class="is-active">Cek Pesanan</RouterLink>
       </nav>
 
       <div class="header-actions">

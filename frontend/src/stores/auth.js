@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useAiChatStore } from '@/stores/aiChat'
 
 export const useAuthStore = defineStore('auth', () => {
   function readUser() {
@@ -28,6 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('riasku_user')
     sessionStorage.removeItem('riasku_access_token')
     localStorage.removeItem('riasku_cart')
+    localStorage.removeItem('riasku_ai_session_token')
+    localStorage.removeItem('riasku_ai_session_tokens')
+    useAiChatStore().clearAllSessionsLocal()
   }
 
   return { user, accessToken, isAuthenticated, setSession, clearSession }
