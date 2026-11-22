@@ -12,6 +12,15 @@ const isCustomer = computed(() => {
   return auth.isAuthenticated && auth.user?.account_type === 'pelanggan'
 })
 
+const hasPreorderItems = computed(() => cart.items.some((item) => Boolean(item.is_preorder_item)))
+const maxPreorderDays = computed(() => {
+  const days = cart.items
+    .filter((item) => Boolean(item.is_preorder_item))
+    .map((item) => Number(item.preorder_estimate_days || 0))
+    .filter((d) => d > 0)
+  return days.length ? Math.max(...days) : null
+})
+
 onMounted(() => cart.hydrateCart())
 </script>
 
@@ -35,6 +44,12 @@ onMounted(() => cart.hydrateCart())
             <RouterLink :to="`/products/${item.id}`" class="cart-product-name">{{ item.name }}</RouterLink>
             <small>{{ item.code || item.sku || `Produk #${item.id}` }}</small>
             <small v-if="item.variantName">Varian: {{ item.variantName }}</small>
+            <span v-if="item.is_preorder_item" class="stock-pill pill-preorder">
+              Pre-Order{{ item.preorder_estimate_days ? ` · Est. ${item.preorder_estimate_days} hari` : '' }}
+            </span>
+            <span v-else class="stock-pill pill-ready">
+              Tersedia (Stok {{ item.stock ?? 0 }})
+            </span>
             <strong>{{ formatRupiah(item.price) }}</strong>
           </div>
           <div class="cart-quantity-wrap">
@@ -42,7 +57,7 @@ onMounted(() => cart.hydrateCart())
             <div class="quantity-control">
               <button type="button" :aria-label="`Kurangi ${item.name}`" :disabled="item.quantity <= 1" @click="cart.updateQuantity(item.cartKey, item.quantity - 1)">−</button>
               <span>{{ item.quantity }}</span>
-              <button type="button" :aria-label="`Tambah ${item.name}`" :disabled="item.quantity >= (item.stock ?? 9999)" @click="cart.updateQuantity(item.cartKey, item.quantity + 1)">+</button>
+              <button type="button" :aria-label="`Tambah ${item.name}`" :disabled="item.quantity >= (item.is_preorder_item ? 99 : (item.stock ?? 9999))" @click="cart.updateQuantity(item.cartKey, item.quantity + 1)">+</button>
             </div>
           </div>
           <div class="cart-line-total">
@@ -64,6 +79,9 @@ onMounted(() => cart.hydrateCart())
         <div class="summary-line"><span>Subtotal produk</span><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
         <div class="summary-line"><span>Pengiriman</span><span>Dihitung saat checkout</span></div>
         <div class="summary-line summary-total"><strong>Total sementara</strong><strong>{{ formatRupiah(cart.subtotal) }}</strong></div>
+        <p v-if="hasPreorderItems" class="cart-po-summary-note">
+          ⏳ Keranjang berisi produk <strong>Pre-Order</strong>. Pesanan akan dikirim serentak setelah proses penyiapan{{ maxPreorderDays ? ` (maksimal ${maxPreorderDays} hari kerja)` : '' }}.
+        </p>
         <RouterLink
           v-if="isCustomer"
           to="/checkout"

@@ -21,22 +21,40 @@ const variants = computed(() => Array.isArray(product.value?.variants) ? product
 const selectedVariant = computed(() => variants.value.find((variant) => String(variant.id) === String(selectedVariantId.value)) || variants.value[0] || null)
 const stock = computed(() => Number(selectedVariant.value?.stock ?? product.value?.stock ?? 0))
 const unitPrice = computed(() => Number(selectedVariant.value?.price ?? product.value?.price ?? 0))
-const isPreorder = computed(() => Boolean(product.value?.stock_label === 'Pre-Order' || product.value?.is_preorder))
+const isSelectedVariantPreorder = computed(() => {
+  if (!product.value) return false
+  if (selectedVariant.value?.is_preorder_item !== undefined) {
+    return Boolean(selectedVariant.value.is_preorder_item)
+  }
+  return stock.value <= 0 && Boolean(product.value.is_preorder)
+})
+const maxOrderQuantity = computed(() => {
+  if (stock.value > 0) return stock.value
+  if (isSelectedVariantPreorder.value) return 99
+  return 1
+})
 const canAdd = computed(() => {
   if (product.value?.type === 'service') return false
   if (stock.value > 0) return quantity.value > 0 && quantity.value <= stock.value
-  if (isPreorder.value) return quantity.value > 0
+  if (isSelectedVariantPreorder.value) return quantity.value > 0 && quantity.value <= 99
   return false
 })
 const stockStatusText = computed(() => {
   if (stock.value > 0) return `Tersedia (${stock.value} item)`
-  if (isPreorder.value) return `Pre-Order${product.value?.preorder_estimate_days ? ` (Estimasi ${product.value.preorder_estimate_days} hari)` : ''}`
+  if (isSelectedVariantPreorder.value) {
+    return `Pre-Order${product.value?.preorder_estimate_days ? ` (Estimasi ${product.value.preorder_estimate_days} hari)` : ''}`
+  }
   return 'Stok Habis'
 })
 const stockBadgeClass = computed(() => {
   if (stock.value > 0) return 'stock-available'
-  if (isPreorder.value) return 'stock-preorder'
+  if (isSelectedVariantPreorder.value) return 'stock-preorder'
   return 'stock-empty'
+})
+
+watch(selectedVariantId, () => {
+  quantity.value = 1
+  addedMessage.value = ''
 })
 
 async function loadProduct(id) {
@@ -90,7 +108,7 @@ watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
           <label for="product-variant">Pilih varian</label>
           <select id="product-variant" v-model="selectedVariantId" class="form-control">
             <option v-for="variant in variants" :key="variant.id" :value="String(variant.id)">
-              {{ variant.name }}{{ variant.stock !== undefined ? ` · Stok ${variant.stock}` : '' }}
+              {{ variant.name }} · {{ Number(variant.stock ?? 0) > 0 ? `Stok ${variant.stock}` : (product.is_preorder ? 'Pre-Order' : 'Stok Habis') }}
             </option>
           </select>
         </div>
@@ -100,14 +118,19 @@ watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
           <span v-if="product.sku">SKU: {{ product.sku }}</span>
         </div>
 
+        <p v-if="isSelectedVariantPreorder" class="detail-po-notice">
+          ⏳ Varian ini dipesan dengan sistem <strong>Pre-Order</strong> (estimasi penyiapan
+          <strong>{{ product.preorder_estimate_days || 3 }} hari kerja</strong> sebelum dikirim).
+        </p>
+
         <div v-if="product.type !== 'service'" class="detail-buy-row">
           <div class="detail-quantity" aria-label="Jumlah produk">
             <button type="button" aria-label="Kurangi jumlah" :disabled="quantity <= 1" @click="quantity--">−</button>
-            <input v-model.number="quantity" type="number" min="1" :max="stock > 0 ? stock : 999" />
-            <button type="button" aria-label="Tambah jumlah" :disabled="stock > 0 && quantity >= stock" @click="quantity++">+</button>
+            <input v-model.number="quantity" type="number" min="1" :max="maxOrderQuantity" />
+            <button type="button" aria-label="Tambah jumlah" :disabled="!canAdd || quantity >= maxOrderQuantity" @click="quantity++">+</button>
           </div>
           <button class="button button-primary" type="button" :disabled="!canAdd" @click="addToCart">
-            {{ isPreorder ? 'Pre-Order Sekarang' : '＋ Tambah ke Keranjang' }}
+            {{ isSelectedVariantPreorder ? 'Pre-Order Sekarang' : '＋ Tambah ke Keranjang' }}
           </button>
         </div>
         <RouterLink v-else to="/consultation" class="button button-primary">Konsultasi Jadwal</RouterLink>
@@ -119,7 +142,16 @@ watch(() => route.params.id, (id) => loadProduct(id), { immediate: true })
           <span>✓ COD area Surabaya</span>
           <span>✓ Pengiriman seluruh Indonesia</span>
         </div>
-        <button class="review-link" type="button" @click="ui.openModal('review', { product })">☆ Tulis ulasan produk ini</button>
+        <div class="detail-actions">
+          <button class="review-link" type="button" @click="ui.openModal('review', { product })">☆ Tulis ulasan produk ini</button>
+          <button
+            class="review-link"
+            type="button"
+            @click="ui.openModal('ai', { productId: product.id, initialPrompt: `Jelaskan varian, stok, dan kecocokan ${product.name}` })"
+          >
+            ✦ Tanya AI tentang produk ini
+          </button>
+        </div>
       </div>
     </div>
   </section>

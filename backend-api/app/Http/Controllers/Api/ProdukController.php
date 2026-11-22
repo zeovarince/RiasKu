@@ -13,7 +13,8 @@ class ProdukController extends Controller
     {
         $query = Produk::query()
             ->where('is_active', true)
-            ->with(['kategori', 'activeVarians', 'primaryFoto']);
+            ->with(['kategori', 'activeVarians', 'primaryFoto'])
+            ->withSum(['activeVarians as active_stock_sum'], 'stock');
 
         if ($search = trim((string) ($request->query('q') ?? $request->query('search')))) {
             $query->where(function ($sub) use ($search) {
@@ -33,6 +34,11 @@ class ProdukController extends Controller
                         });
                 });
             }
+        }
+
+        $stockFilter = $request->query('stock_label') ?? $request->query('stock_status');
+        if ($stockFilter !== null && trim((string) $stockFilter) !== '') {
+            $query->filterStockLabel((string) $stockFilter);
         }
 
         $sort = (string) $request->query('sort', 'recommended');
@@ -84,9 +90,10 @@ class ProdukController extends Controller
         $product = Produk::query()
             ->where('is_active', true)
             ->with(['kategori', 'activeVarians', 'fotos', 'primaryFoto'])
+            ->withSum(['activeVarians as active_stock_sum'], 'stock')
             ->find($id);
 
-        if (!$product) {
+        if (! $product) {
             return response()->json([
                 'message' => 'Produk tidak ditemukan atau sedang tidak aktif.',
             ], 404);

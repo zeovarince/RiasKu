@@ -213,6 +213,9 @@ onMounted(() => {
                 <AdminBadge :tone="getTone(product.stock_label)">
                   {{ product.stock_label }}
                 </AdminBadge>
+                <small v-if="product.stock_label === 'Pre-Order' && product.preorder_estimate_days" class="pack-qty">
+                  Est. {{ product.preorder_estimate_days }} hari
+                </small>
               </td>
               <td>
                 <button

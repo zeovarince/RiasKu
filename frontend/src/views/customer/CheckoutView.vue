@@ -50,6 +50,15 @@ const isSurabaya = computed(() => {
   return String(buyer.value.city || '').toLowerCase().includes('surabaya')
 })
 
+const hasPreorderItems = computed(() => cart.items.some((item) => Boolean(item.is_preorder_item)))
+const maxPreorderDays = computed(() => {
+  const days = cart.items
+    .filter((item) => Boolean(item.is_preorder_item))
+    .map((item) => Number(item.preorder_estimate_days || 0))
+    .filter((d) => d > 0)
+  return days.length ? Math.max(...days) : null
+})
+
 // Jika user mengubah kota ke luar Surabaya, otomatis beralih dari COD ke Online
 watch(() => buyer.value.city, (newCity) => {
   if (!String(newCity || '').toLowerCase().includes('surabaya') && method.value === 'cod') {
@@ -405,11 +414,18 @@ async function submitCheckout() {
             <div>
               <span class="item-name">{{ item.name }}</span>
               <small v-if="item.variantName" class="item-sub">Varian: {{ item.variantName }}</small>
+              <span v-if="item.is_preorder_item" class="stock-pill pill-preorder" style="margin-top: 3px;">
+                Pre-Order{{ item.preorder_estimate_days ? ` · Est. ${item.preorder_estimate_days} hari` : '' }}
+              </span>
               <small class="item-qty">Qty: {{ item.quantity }} pcs</small>
             </div>
             <strong>{{ formatRupiah(item.price * item.quantity) }}</strong>
           </div>
         </div>
+
+        <p v-if="hasPreorderItems" class="cart-po-summary-note" style="margin-bottom: 1rem;">
+          ⏳ Pesanan ini memuat produk <strong>Pre-Order</strong> dengan estimasi penyiapan{{ maxPreorderDays ? ` hingga ${maxPreorderDays} hari` : '' }} sebelum pengiriman.
+        </p>
 
         <div class="summary-calculation">
           <div class="summary-sub-line">

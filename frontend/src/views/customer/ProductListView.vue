@@ -12,9 +12,17 @@ const loading = ref(true)
 const error = ref('')
 const search = ref(String(route.query.q || ''))
 const selectedCategory = ref(String(route.query.category || 'all'))
+const selectedStockLabel = ref(String(route.query.stock_label || 'all'))
 const sortBy = ref(String(route.query.sort || 'recommended'))
 const currentPage = ref(1)
 const pageSize = 8
+
+const stockOptions = [
+  { value: 'all', label: 'Semua Status Stok' },
+  { value: 'Tersedia', label: 'Tersedia' },
+  { value: 'Pre-Order', label: 'Pre-Order' },
+  { value: 'Stok Habis', label: 'Stok Habis' },
+]
 
 const categoryOptions = computed(() => [
   { slug: 'all', name: 'Semua' },
@@ -30,7 +38,9 @@ const filteredProducts = computed(() => {
     const matchesCategory = selectedCategory.value === 'all' ||
       String(product.category).toLowerCase() === selectedCategory.value.toLowerCase() ||
       String(product.categoryLabel).toLowerCase() === selectedCategory.value.toLowerCase()
-    return matchesQuery && matchesCategory
+    const matchesStock = selectedStockLabel.value === 'all' ||
+      String(product.stock_label || '').toLowerCase() === selectedStockLabel.value.toLowerCase()
+    return matchesQuery && matchesCategory && matchesStock
   })
 
   result = [...result]
@@ -47,10 +57,11 @@ const paginatedProducts = computed(() => {
   return filteredProducts.value.slice(start, start + pageSize)
 })
 
-watch([search, selectedCategory, sortBy], () => { currentPage.value = 1 })
+watch([search, selectedCategory, selectedStockLabel, sortBy], () => { currentPage.value = 1 })
 watch(() => route.query, (query) => {
   search.value = String(query.q || '')
   selectedCategory.value = String(query.category || 'all')
+  selectedStockLabel.value = String(query.stock_label || 'all')
   sortBy.value = String(query.sort || 'recommended')
 }, { deep: true })
 
@@ -77,6 +88,7 @@ function submitSearch() {
     query: {
       ...(search.value.trim() ? { q: search.value.trim() } : {}),
       ...(selectedCategory.value !== 'all' ? { category: selectedCategory.value } : {}),
+      ...(selectedStockLabel.value !== 'all' ? { stock_label: selectedStockLabel.value } : {}),
       ...(sortBy.value !== 'recommended' ? { sort: sortBy.value } : {}),
     },
   })
@@ -85,6 +97,7 @@ function submitSearch() {
 function clearFilters() {
   search.value = ''
   selectedCategory.value = 'all'
+  selectedStockLabel.value = 'all'
   sortBy.value = 'recommended'
   router.replace({ name: 'products' })
 }
@@ -131,7 +144,19 @@ onMounted(loadCatalog)
         :class="{ active: selectedCategory === category.slug }"
         @click="selectedCategory = category.slug"
       >{{ category.name }}</button>
-      <button v-if="search || selectedCategory !== 'all' || sortBy !== 'recommended'" class="catalog-reset" type="button" @click="clearFilters">Reset filter</button>
+      <button v-if="search || selectedCategory !== 'all' || selectedStockLabel !== 'all' || sortBy !== 'recommended'" class="catalog-reset" type="button" @click="clearFilters">Reset filter</button>
+    </div>
+
+    <div class="catalog-stock-row" aria-label="Filter status stok">
+      <span class="catalog-filter-label">Status Stok:</span>
+      <button
+        v-for="opt in stockOptions"
+        :key="opt.value"
+        type="button"
+        class="filter-pill"
+        :class="{ active: selectedStockLabel === opt.value }"
+        @click="selectedStockLabel = opt.value"
+      >{{ opt.label }}</button>
     </div>
 
     <div v-if="loading" class="catalog-state" role="status">
