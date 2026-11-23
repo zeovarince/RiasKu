@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\AdminAuthController;
 use App\Http\Controllers\Api\Admin\KategoriController;
+use App\Http\Controllers\Api\Admin\MonthlyReportController;
 use App\Http\Controllers\Api\Admin\OrderManagementController;
 use App\Http\Controllers\Api\Admin\ProdukController;
 use App\Http\Controllers\Api\Admin\ProdukFotoController;
@@ -58,6 +59,11 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     // Rating & Ulasan Produk (PPL-25)
     Route::get('/reviews', [AdminUlasanProdukController::class, 'index']);
     Route::patch('/reviews/{review}', [AdminUlasanProdukController::class, 'update']);
+
+    // Rekap Keuangan Bulanan (PPL-26)
+    Route::get('/reports/monthly', [MonthlyReportController::class, 'summary']);
+    Route::get('/reports/monthly/transactions', [MonthlyReportController::class, 'transactions']);
+    Route::get('/reports/monthly/export', [MonthlyReportController::class, 'export']);
 
     // Barang Masuk & Peringatan Restock (PPL-23)
     Route::get('/inventory/incoming', [StokMasukController::class, 'index']);

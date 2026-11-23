@@ -41,6 +41,11 @@ export const adminService = {
   incomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
   directSales: (params = {}) => dashboardApi.get('/sales/direct', { params }),
   monthlyReport: (params = {}) => dashboardApi.get('/reports/monthly', { params }),
+  monthlyTransactions: (params = {}) => dashboardApi.get('/reports/monthly/transactions', { params }),
+  exportMonthlyReport: (params = {}) => dashboardApi.get('/reports/monthly/export', {
+    params,
+    responseType: 'blob',
+  }),
   storeSettings: () => dashboardApi.get('/settings/store'),
   updateStoreSettings: (payload) => dashboardApi.put('/settings/store', payload),
 }
