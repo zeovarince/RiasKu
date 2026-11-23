@@ -20,6 +20,7 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function (): void {
     Route::post('/register', [CustomerAuthController::class, 'register']);
     Route::post('/login', [CustomerAuthController::class, 'login']);
     Route::post('/google', [CustomerAuthController::class, 'google']);
+    Route::post('/google/exchange', [CustomerAuthController::class, 'googleExchange']);
 });
 
 // Public Catalog (Kategori & Produk)

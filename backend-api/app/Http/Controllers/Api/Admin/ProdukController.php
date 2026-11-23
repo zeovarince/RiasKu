@@ -39,6 +39,10 @@ class ProdukController extends Controller
             $query->filterStockLabel((string) $request->input('stock_label'));
         }
 
+        if ($request->boolean('restock') || $request->boolean('needs_restock')) {
+            $query->needsRestock();
+        }
+
         $perPage = max(1, min(100, (int) $request->input('per_page', 15)));
         $paginator = $query->latest('id')->paginate($perPage);
 
@@ -72,6 +76,7 @@ class ProdukController extends Controller
             'bpom_number' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
+            'min_stock' => ['nullable', 'integer', 'min:0'],
             'varians' => ['nullable', 'array'],
             'varians.*.name' => ['required_with:varians', 'string', 'max:100'],
             'varians.*.stock' => ['required_with:varians', 'integer', 'min:0'],
@@ -203,6 +208,7 @@ class ProdukController extends Controller
             'bpom_number' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
+            'min_stock' => ['nullable', 'integer', 'min:0'],
             'varians' => ['nullable', 'array', 'min:1'],
             'varians.*.id' => ['nullable', 'integer', 'distinct'],
             'varians.*.name' => ['required_with:varians', 'string', 'max:100'],

@@ -32,6 +32,7 @@ class Produk extends Model
         'bpom_number',
         'description',
         'is_active',
+        'min_stock',
     ];
 
     protected $casts = [
@@ -43,11 +44,14 @@ class Produk extends Model
         'is_preorder' => 'boolean',
         'preorder_estimate_days' => 'integer',
         'is_active' => 'boolean',
+        'min_stock' => 'integer',
     ];
 
     protected $appends = [
         'total_stock',
         'stock_label',
+        'needs_restock',
+        'restock_status',
         'price_warning',
         'image_url',
         'art',
@@ -72,6 +76,11 @@ class Produk extends Model
     public function activeVarians(): HasMany
     {
         return $this->hasMany(ProdukVarian::class, 'produk_id')->where('is_active', true);
+    }
+
+    public function stokMasuks(): HasMany
+    {
+        return $this->hasMany(StokMasuk::class, 'produk_id');
     }
 
     public function fotos(): HasMany
@@ -104,6 +113,35 @@ class Produk extends Model
         }
 
         return (int) $this->activeVarians()->sum('stock');
+    }
+
+    public function scopeNeedsRestock(Builder $query): Builder
+    {
+        $produkTable = (new Produk)->getTable();
+        $varianTable = (new ProdukVarian)->getTable();
+
+        return $query->whereRaw(
+            '(SELECT COALESCE(SUM(v.stock), 0) FROM '.$varianTable.' AS v '.
+            'WHERE v.produk_id = '.$produkTable.'.id AND v.is_active = 1) <= '.$produkTable.'.min_stock'
+        );
+    }
+
+    public function getNeedsRestockAttribute(): bool
+    {
+        return $this->total_stock <= (int) ($this->min_stock ?? 0);
+    }
+
+    public function getRestockStatusAttribute(): string
+    {
+        if ($this->total_stock === 0) {
+            return 'Stok Habis';
+        }
+
+        if ($this->needs_restock) {
+            return 'Stok Menipis';
+        }
+
+        return 'Stok Aman';
     }
 
     public function scopeFilterStockLabel(Builder $query, ?string $label): Builder

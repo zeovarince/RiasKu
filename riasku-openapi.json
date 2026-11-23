@@ -1,0 +1,5789 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "RiasKu API",
+    "version": "1.0.0",
+    "description": "Spesifikasi API REST untuk toko kosmetik RiasKu (admin panel & storefront pelanggan), disusun dari desain Figma `ui-ux-riasku`.\n\n**Konvensi**: semua nominal Rupiah berupa integer; tanggal ISO 8601; autentikasi Bearer JWT; paginasi `page` & `per_page`.\n\n**Catatan asumsi**: endpoint diturunkan dari UI, jadi nama field dan aturan bisnis perlu dikonfirmasi dengan tim backend."
+  },
+  "servers": [
+    {
+      "url": "https://api.riasku.id/v1",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000/v1",
+      "description": "Local"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Registrasi, login, sesi"
+    },
+    {
+      "name": "Katalog",
+      "description": "Beranda, pencarian, detail produk (publik)"
+    },
+    {
+      "name": "Keranjang",
+      "description": "Keranjang belanja pelanggan"
+    },
+    {
+      "name": "Checkout",
+      "description": "Ongkir dan pembuatan pesanan"
+    },
+    {
+      "name": "Pesanan Saya",
+      "description": "Riwayat & pelacakan pesanan pelanggan"
+    },
+    {
+      "name": "Ulasan",
+      "description": "Ulasan produk oleh pelanggan"
+    },
+    {
+      "name": "Tanya AI",
+      "description": "AI Beauty Advisor"
+    },
+    {
+      "name": "Layanan Rias",
+      "description": "Paket jasa rias & reservasi jadwal"
+    },
+    {
+      "name": "Akun Pelanggan",
+      "description": "Wishlist, notifikasi restock, alamat"
+    },
+    {
+      "name": "Upload",
+      "description": "Upload gambar"
+    },
+    {
+      "name": "Admin - Layanan Rias",
+      "description": "Admin Panel: Layanan Rias"
+    },
+    {
+      "name": "Admin - Dashboard",
+      "description": "Admin Panel: Dashboard"
+    },
+    {
+      "name": "Admin - Produk",
+      "description": "Admin Panel: Produk"
+    },
+    {
+      "name": "Admin - Kategori",
+      "description": "Admin Panel: Kategori"
+    },
+    {
+      "name": "Admin - Ulasan",
+      "description": "Admin Panel: Ulasan"
+    },
+    {
+      "name": "Admin - Pesanan",
+      "description": "Admin Panel: Pesanan"
+    },
+    {
+      "name": "Admin - Stok & Keuangan",
+      "description": "Admin Panel: Stok & Keuangan"
+    },
+    {
+      "name": "Admin - Pengaturan",
+      "description": "Admin Panel: Pengaturan"
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Daftar akun pelanggan",
+        "operationId": "register",
+        "description": "Layar: Daftar / Register (Buat akun RiasKu).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Akun dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Login admin atau pelanggan",
+        "operationId": "login",
+        "description": "Layar: Masuk / Login. Satu endpoint untuk admin dan pelanggan; role ada di respons `user.role`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/auth/google": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Login dengan Google",
+        "operationId": "loginGoogle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleLoginRequest"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Minta tautan reset kata sandi",
+        "operationId": "forgotPassword",
+        "description": "Layar: Lupa kata sandi?",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "202": {
+            "description": "Tautan reset dikirim bila email terdaftar"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Berhasil logout"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Profil pengguna saat ini",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Ubah profil",
+        "operationId": "updateMe",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdateInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/categories": {
+      "get": {
+        "tags": [
+          "Katalog"
+        ],
+        "summary": "Daftar kategori (publik)",
+        "operationId": "listCategoriesPublic",
+        "description": "Dipakai chip kategori di beranda (Complexion, Lip Care, Eye Makeup, ...).",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": [
+          "Katalog"
+        ],
+        "summary": "Cari & daftar produk (publik)",
+        "operationId": "listProducts",
+        "description": "Layar: Beranda/Katalog dan kolom pencarian. Hanya produk aktif.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Cari nama, merek, shade",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "best_seller",
+                "newest",
+                "price_asc",
+                "price_desc",
+                "rating"
+              ]
+            }
+          },
+          {
+            "name": "min_price",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "in_stock_only",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProductSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          }
+        }
+      }
+    },
+    "/products/best-sellers": {
+      "get": {
+        "tags": [
+          "Katalog"
+        ],
+        "summary": "Produk paling diminati",
+        "operationId": "listBestSellers",
+        "description": "Layar: Beranda - Paling Diminati (Best Seller).",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "default": 8
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProductSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "tags": [
+          "Katalog"
+        ],
+        "summary": "Detail produk",
+        "operationId": "getProduct",
+        "description": "Layar: Detail Produk (varian/shade, deskripsi formula, cara pemakaian, ketentuan COD).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/products/{id}/reviews": {
+      "get": {
+        "tags": [
+          "Ulasan"
+        ],
+        "summary": "Ulasan produk (publik)",
+        "operationId": "listProductReviews",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "rating",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Review"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/cart": {
+      "get": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Lihat keranjang",
+        "operationId": "getCart",
+        "description": "Layar: Keranjang Belanja.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Kosongkan keranjang",
+        "operationId": "clearCart",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dikosongkan"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/cart/items": {
+      "post": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Tambah item ke keranjang",
+        "operationId": "addCartItem",
+        "description": "Tombol + Keranjang. Varian pre-order diperbolehkan jika produk `is_preorder_allowed`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartItemInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Keranjang terbaru",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/cart/items/{id}": {
+      "patch": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Ubah jumlah item",
+        "operationId": "updateCartItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID item keranjang",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartItemUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Hapus item dari keranjang",
+        "operationId": "removeCartItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID item keranjang",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/cart/note": {
+      "put": {
+        "tags": [
+          "Keranjang"
+        ],
+        "summary": "Simpan catatan untuk toko",
+        "operationId": "setCartNote",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartNoteInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/shipping/quote": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Hitung opsi & ongkir",
+        "operationId": "quoteShipping",
+        "description": "Layar: Checkout - Alamat Pengiriman & Ongkir Otomatis. Kurir toko hanya tersedia untuk Surabaya; COD hanya untuk wilayah Surabaya.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingQuoteRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShippingOption"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Buat pesanan (checkout)",
+        "operationId": "createOrder",
+        "description": "Layar: Checkout & COD. Memvalidasi stok, menghitung total, dan membuat QR/VA bila pembayaran online.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Pesanan dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Pesanan Saya"
+        ],
+        "summary": "Daftar pesanan saya",
+        "operationId": "listMyOrders",
+        "description": "Layar: Cek Status - tab Semua Pesanan, Menunggu Pembayaran, Diproses, Sedang Dikirim, Selesai.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/OrderStatus"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrderSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "tags": [
+          "Pesanan Saya"
+        ],
+        "summary": "Detail & pelacakan pesanan saya",
+        "operationId": "getMyOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/orders/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Pesanan Saya"
+        ],
+        "summary": "Batalkan pesanan",
+        "operationId": "cancelMyOrder",
+        "description": "Hanya bila status masih `waiting_payment`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/orders/{id}/courier-location": {
+      "get": {
+        "tags": [
+          "Pesanan Saya"
+        ],
+        "summary": "Lacak posisi kurir toko",
+        "operationId": "getCourierLocation",
+        "description": "Tombol Lacak Posisi Kurir. Hanya untuk pesanan Kurir Toko berstatus `shipped`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourierLocation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/orders/track/{code}": {
+      "get": {
+        "tags": [
+          "Pesanan Saya"
+        ],
+        "summary": "Cek resi / status berdasarkan kode",
+        "operationId": "trackOrder",
+        "description": "Menu Cek Resi di footer.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "RSK-20261106-089"
+            }
+          },
+          {
+            "name": "phone",
+            "in": "query",
+            "required": false,
+            "description": "4 digit terakhir nomor WhatsApp untuk verifikasi",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/reviews": {
+      "post": {
+        "tags": [
+          "Ulasan"
+        ],
+        "summary": "Kirim ulasan produk",
+        "operationId": "createReview",
+        "description": "Layar: Tulis Ulasan & Penilaian. Hanya untuk pesanan berstatus `completed` milik pengguna.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Ulasan dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/reviews/draft": {
+      "put": {
+        "tags": [
+          "Ulasan"
+        ],
+        "summary": "Simpan draf ulasan",
+        "operationId": "saveReviewDraft",
+        "description": "Tombol Simpan Draf Ulasan.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Draf tersimpan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewInput"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/ai/chat": {
+      "post": {
+        "tags": [
+          "Tanya AI"
+        ],
+        "summary": "Kirim pesan ke AI Beauty Advisor",
+        "operationId": "aiChat",
+        "description": "Layar: Tanya AI (rekomendasi shade, cek ongkir COD, dll.). Login opsional.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          }
+        }
+      }
+    },
+    "/uploads/images": {
+      "post": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Upload foto (produk / ulasan)",
+        "operationId": "uploadImage",
+        "description": "Format JPG/PNG. Watermark toko ditambahkan otomatis untuk foto produk.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "product",
+                      "review"
+                    ]
+                  }
+                },
+                "required": [
+                  "file",
+                  "purpose"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Terunggah",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/admin/dashboard": {
+      "get": {
+        "tags": [
+          "Admin - Dashboard"
+        ],
+        "summary": "Ringkasan dashboard",
+        "operationId": "adminDashboard",
+        "description": "Layar: Dashboard (Perlu ditindak, penjualan bulan ini, grafik 6 bulan, barang terjual, segera restock, pesanan terbaru).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/products": {
+      "get": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Daftar produk",
+        "operationId": "adminListProducts",
+        "description": "Layar: Produk.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Nama atau merek",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive"
+              ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProductSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Tambah produk",
+        "operationId": "adminCreateProduct",
+        "description": "Layar: Tambah Produk.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Produk dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/products/{id}": {
+      "get": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Detail produk (termasuk harga modal)",
+        "operationId": "adminGetProduct",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Ubah produk",
+        "operationId": "adminUpdateProduct",
+        "description": "Tombol Ubah.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Hapus produk",
+        "operationId": "adminDeleteProduct",
+        "description": "Gagal 409 bila produk sudah punya pesanan; gunakan nonaktifkan.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/products/{id}/status": {
+      "patch": {
+        "tags": [
+          "Admin - Produk"
+        ],
+        "summary": "Aktifkan / nonaktifkan produk",
+        "operationId": "adminSetProductStatus",
+        "description": "Tombol Nonaktifkan / Aktifkan.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductStatusInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/categories": {
+      "get": {
+        "tags": [
+          "Admin - Kategori"
+        ],
+        "summary": "Daftar kategori",
+        "operationId": "adminListCategories",
+        "description": "Layar: Kategori.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin - Kategori"
+        ],
+        "summary": "Tambah kategori",
+        "operationId": "adminCreateCategory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/categories/{id}": {
+      "put": {
+        "tags": [
+          "Admin - Kategori"
+        ],
+        "summary": "Ubah kategori",
+        "operationId": "adminUpdateCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin - Kategori"
+        ],
+        "summary": "Hapus kategori",
+        "operationId": "adminDeleteCategory",
+        "description": "Gagal 409 bila kategori masih berisi produk.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/reviews": {
+      "get": {
+        "tags": [
+          "Admin - Ulasan"
+        ],
+        "summary": "Daftar ulasan untuk moderasi",
+        "operationId": "adminListReviews",
+        "description": "Layar: Ulasan.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "visible",
+                "hidden"
+              ]
+            }
+          },
+          {
+            "name": "rating",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            }
+          },
+          {
+            "name": "product_id",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Review"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/reviews/{id}/status": {
+      "patch": {
+        "tags": [
+          "Admin - Ulasan"
+        ],
+        "summary": "Tampilkan / sembunyikan ulasan",
+        "operationId": "adminSetReviewStatus",
+        "description": "Tombol Tutup / Sembunyikan / Lihat.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewStatusInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/orders": {
+      "get": {
+        "tags": [
+          "Admin - Pesanan"
+        ],
+        "summary": "Daftar pesanan online",
+        "operationId": "adminListOrders",
+        "description": "Layar: Pesanan.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/OrderStatus"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Kode pesanan atau nama penerima",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrderSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    },
+                    "status_counts": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Jumlah per status untuk tab (Semua, Menunggu Bayar, Dibayar, Diproses, Dikirim, Selesai, Dibatalkan)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/orders/{id}": {
+      "get": {
+        "tags": [
+          "Admin - Pesanan"
+        ],
+        "summary": "Detail pesanan",
+        "operationId": "adminGetOrder",
+        "description": "Layar: Detail Pesanan.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/orders/{id}/status": {
+      "patch": {
+        "tags": [
+          "Admin - Pesanan"
+        ],
+        "summary": "Ubah status pesanan",
+        "operationId": "adminUpdateOrderStatus",
+        "description": "Tombol Simpan Status. Transisi: waiting_payment → paid → processing → shipped → completed; cancelled dari status mana pun sebelum shipped. Status `shipped` mewajibkan `tracking_number` untuk ekspedisi.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderStatusInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/stock-in": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Riwayat barang masuk",
+        "operationId": "adminListStockIn",
+        "description": "Layar: Barang Masuk.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StockIn"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Catat barang masuk",
+        "operationId": "adminCreateStockIn",
+        "description": "Menambah stok varian dan memperbarui harga modal produk.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockInInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Tercatat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockIn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/stock/low": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Varian segera restock",
+        "operationId": "adminLowStock",
+        "description": "Varian dengan stok ≤ batas minimum. Klik baris mengisi form barang masuk otomatis.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LowStockItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/direct-sales": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Riwayat penjualan langsung (door-to-door)",
+        "operationId": "adminListDirectSales",
+        "description": "Layar: Penjualan DoD.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DirectSale"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Catat penjualan langsung",
+        "operationId": "adminCreateDirectSale",
+        "description": "Mengurangi stok varian.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectSaleInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Tercatat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectSale"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/direct-sales/{id}": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Detail penjualan langsung",
+        "operationId": "adminGetDirectSale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectSale"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/reports/monthly": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Rekap bulanan",
+        "operationId": "adminMonthlyReport",
+        "description": "Layar: Rekap Bulanan.",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}$",
+              "example": "2026-11"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthlyReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/reports/monthly/export": {
+      "get": {
+        "tags": [
+          "Admin - Stok & Keuangan"
+        ],
+        "summary": "Unduh rekap bulanan (PDF)",
+        "operationId": "adminExportMonthlyReport",
+        "description": "Tombol Unduh PDF / Cetak.",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File PDF",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/settings": {
+      "get": {
+        "tags": [
+          "Admin - Pengaturan"
+        ],
+        "summary": "Ambil pengaturan toko",
+        "operationId": "adminGetSettings",
+        "description": "Layar: Pengaturan Toko.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin - Pengaturan"
+        ],
+        "summary": "Simpan pengaturan toko",
+        "operationId": "adminUpdateSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreSettings"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "tags": [
+          "Layanan Rias"
+        ],
+        "summary": "Daftar paket jasa rias (publik)",
+        "operationId": "listServices",
+        "description": "Layar: Beranda - kartu paket jasa (mis. Paket Rias Pengantin Modern), kategori Rias Pengantin / Rias Wisuda.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Service"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}": {
+      "get": {
+        "tags": [
+          "Layanan Rias"
+        ],
+        "summary": "Detail paket jasa rias",
+        "operationId": "getService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/bookings": {
+      "post": {
+        "tags": [
+          "Layanan Rias"
+        ],
+        "summary": "Reservasi jadwal rias / konsultasi",
+        "operationId": "createBooking",
+        "description": "Tombol Konsultasi Jadwal / Reservasi Jadwal Rias.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Reservasi dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Booking"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Layanan Rias"
+        ],
+        "summary": "Reservasi saya",
+        "operationId": "listMyBookings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/BookingStatus"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Booking"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/bookings/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Layanan Rias"
+        ],
+        "summary": "Batalkan reservasi",
+        "operationId": "cancelMyBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Booking"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/wishlist": {
+      "get": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Wishlist saya",
+        "operationId": "listWishlist",
+        "description": "Layar: Cek Status - menu Wishlist Saya.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WishlistItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Tambah ke wishlist",
+        "operationId": "addWishlist",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WishlistInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Ditambahkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/wishlist/{product_id}": {
+      "delete": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Hapus dari wishlist",
+        "operationId": "removeWishlist",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "description": "ID produk",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/restock-subscriptions": {
+      "get": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Notifikasi restock saya",
+        "operationId": "listRestockSubs",
+        "description": "Layar: Cek Status - menu Notifikasi Restock.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RestockSubscription"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Minta notifikasi restock varian",
+        "operationId": "createRestockSub",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestockSubscriptionInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Terdaftar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestockSubscription"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/restock-subscriptions/{id}": {
+      "delete": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Batalkan notifikasi restock",
+        "operationId": "deleteRestockSub",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/addresses": {
+      "get": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Daftar alamat tersimpan",
+        "operationId": "listAddresses",
+        "description": "Layar: Cek Status - menu Pengaturan Alamat.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SavedAddress"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Tambah alamat",
+        "operationId": "createAddress",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedAddressInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddress"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          }
+        }
+      }
+    },
+    "/addresses/{id}": {
+      "put": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Ubah alamat",
+        "operationId": "updateAddress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedAddressInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddress"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Akun Pelanggan"
+        ],
+        "summary": "Hapus alamat",
+        "operationId": "deleteAddress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    },
+    "/admin/services": {
+      "get": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Daftar paket jasa rias",
+        "operationId": "adminListServices",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Service"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Tambah paket jasa rias",
+        "operationId": "adminCreateService",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Dibuat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/services/{id}": {
+      "put": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Ubah paket jasa rias",
+        "operationId": "adminUpdateService",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Hapus paket jasa rias",
+        "operationId": "adminDeleteService",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dihapus"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/bookings": {
+      "get": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Daftar reservasi jasa rias",
+        "operationId": "adminListBookings",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/BookingStatus"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Booking"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          }
+        }
+      }
+    },
+    "/admin/bookings/{id}/status": {
+      "patch": {
+        "tags": [
+          "Admin - Layanan Rias"
+        ],
+        "summary": "Ubah status reservasi",
+        "operationId": "adminUpdateBookingStatus",
+        "description": "**[USULAN]** Ada di desain sisi pelanggan, tetapi belum ada layar admin untuk mengelolanya. ",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID resource",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingStatusInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Booking"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PerPage": {
+        "name": "per_page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      }
+    },
+    "responses": {
+      "400": {
+        "description": "Request tidak valid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "401": {
+        "description": "Belum login / token tidak valid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "403": {
+        "description": "Tidak punya akses",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Data tidak ditemukan",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "409": {
+        "description": "Konflik data (mis. email sudah terdaftar, stok tidak cukup)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string",
+            "example": "Data tidak valid"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "PageMeta": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "customer",
+          "admin"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "full_name": {
+            "type": "string",
+            "example": "Nadira Putri"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone_whatsapp": {
+            "type": "string",
+            "example": "081234567890"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "full_name",
+          "email",
+          "role"
+        ]
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Nama sesuai pengiriman"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone_whatsapp": {
+            "type": "string",
+            "example": "081234567890"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "format": "password"
+          }
+        },
+        "required": [
+          "full_name",
+          "email",
+          "phone_whatsapp",
+          "password"
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "GoogleLoginRequest": {
+        "type": "object",
+        "properties": {
+          "id_token": {
+            "type": "string",
+            "description": "ID token dari Google Sign-In"
+          }
+        },
+        "required": [
+          "id_token"
+        ]
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "type": "string",
+            "example": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Detik"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "user"
+        ]
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "Bibir"
+          },
+          "product_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "CategoryInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "StockLabel": {
+        "type": "string",
+        "enum": [
+          "available",
+          "low_stock",
+          "pre_order",
+          "out_of_stock"
+        ],
+        "description": "Label stok produk (Tersedia / Segera Habis / Pre-Order / Stok Habis)"
+      },
+      "ProductVariant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "01 Rose Bloom",
+            "description": "Nama varian / shade"
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "min_stock": {
+            "type": "integer",
+            "description": "Batas stok minimum; default dari pengaturan toko"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "stock"
+        ]
+      },
+      "ProductVariantInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Kosongkan untuk varian baru"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "stock"
+        ]
+      },
+      "ProductImage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "is_primary": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProductSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "example": "RSK-CUSH-01"
+          },
+          "name": {
+            "type": "string",
+            "example": "Velvet Matte Cushion SPF 35 PA++"
+          },
+          "brand": {
+            "type": "string",
+            "example": "RiasKu Glow"
+          },
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Harga eceran"
+          },
+          "original_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Harga coret (opsional)"
+          },
+          "pack_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Harga per pack grosir/reseller (opsional)"
+          },
+          "pack_size": {
+            "type": "integer",
+            "description": "Isi per pack"
+          },
+          "total_stock": {
+            "type": "integer"
+          },
+          "stock_label": {
+            "$ref": "#/components/schemas/StockLabel"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_preorder_allowed": {
+            "type": "boolean"
+          },
+          "rating_average": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "review_count": {
+            "type": "integer"
+          },
+          "primary_image_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "badge": {
+            "type": "string",
+            "nullable": true,
+            "example": "BEST SELLER"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "price"
+        ]
+      },
+      "Product": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProductSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "Deskripsi formula"
+              },
+              "usage_instructions": {
+                "type": "string",
+                "description": "Cara pemakaian"
+              },
+              "ingredients": {
+                "type": "string",
+                "description": "Ingredients singkat"
+              },
+              "bpom_number": {
+                "type": "string",
+                "nullable": true,
+                "example": "NA18231209876"
+              },
+              "weight_gram": {
+                "type": "integer",
+                "description": "Dipakai untuk menghitung ongkir ekspedisi"
+              },
+              "net_content": {
+                "type": "string",
+                "example": "15g"
+              },
+              "cost_price": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Harga modal. Hanya tampil di endpoint admin."
+              },
+              "variants": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProductVariant"
+                }
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProductImage"
+                }
+              },
+              "preorder_ship_date": {
+                "type": "string",
+                "format": "date",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "ProductInput": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "Dewy Lip Tint Velvet"
+          },
+          "brand": {
+            "type": "string",
+            "example": "RiasKu Glow"
+          },
+          "ingredients": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "usage_instructions": {
+            "type": "string"
+          },
+          "bpom_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "weight_gram": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 50
+          },
+          "cost_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)",
+            "example": 28000
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)",
+            "example": 38000
+          },
+          "pack_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)",
+            "nullable": true
+          },
+          "pack_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Terisi bila dijual per pack"
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          },
+          "is_preorder_allowed": {
+            "type": "boolean",
+            "default": false
+          },
+          "variants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ProductVariantInput"
+            }
+          },
+          "image_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "ID hasil upload; elemen pertama jadi foto utama"
+          }
+        },
+        "required": [
+          "category_id",
+          "name",
+          "cost_price",
+          "price",
+          "weight_gram",
+          "variants"
+        ]
+      },
+      "ProductStatusInput": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ]
+      },
+      "UploadedImage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ]
+      },
+      "Review": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "product_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "reviewer_name": {
+            "type": "string",
+            "description": "Nama disamarkan bila anonim, mis. N***a P."
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mis. Tahan Seharian, Tekstur Ringan"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "order_code": {
+            "type": "string",
+            "example": "RK-0012"
+          },
+          "is_verified_purchase": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "visible",
+              "hidden"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewInput": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "variant_id": {
+            "type": "integer"
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "photo_ids": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "integer"
+            },
+            "description": "ID hasil upload, maksimal 3 foto (JPG/PNG)"
+          },
+          "is_anonymous": {
+            "type": "boolean",
+            "default": false,
+            "description": "Tampilkan sebagai pembeli terverifikasi dengan nama disamarkan"
+          }
+        },
+        "required": [
+          "order_id",
+          "variant_id",
+          "rating"
+        ]
+      },
+      "ReviewStatusInput": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "visible",
+              "hidden"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CartItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "product_id": {
+            "type": "integer"
+          },
+          "variant_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "is_preorder": {
+            "type": "boolean"
+          },
+          "preorder_ship_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "CartItemInput": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "CartItemUpdate": {
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "quantity"
+        ]
+      },
+      "Cart": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItem"
+            }
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "shipping_note": {
+            "type": "string",
+            "example": "Dihitung di checkout"
+          },
+          "store_note": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CartNoteInput": {
+        "type": "object",
+        "properties": {
+          "store_note": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Titip kurir di satpam"
+          }
+        }
+      },
+      "ShippingMethod": {
+        "type": "string",
+        "enum": [
+          "store_courier",
+          "jne",
+          "sicepat",
+          "jnt"
+        ],
+        "description": "store_courier = Kurir Toko (khusus Surabaya)"
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "cod",
+          "qris",
+          "virtual_account",
+          "bank_transfer"
+        ]
+      },
+      "ShippingAddress": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "example": "Kota Surabaya"
+          },
+          "district": {
+            "type": "string",
+            "example": "Gubeng"
+          },
+          "address": {
+            "type": "string",
+            "example": "Jl. Kertajaya Indah No. 45, RT 02 / RW 05"
+          },
+          "postal_code": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "city",
+          "district",
+          "address"
+        ]
+      },
+      "ShippingQuoteRequest": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "ShippingOption": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/ShippingMethod"
+          },
+          "label": {
+            "type": "string",
+            "example": "Kurir Toko Khusus Area Surabaya"
+          },
+          "estimate": {
+            "type": "string",
+            "example": "Tiba hari ini / besok"
+          },
+          "cost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "cod_available": {
+            "type": "boolean"
+          },
+          "cod_handling_fee": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          }
+        }
+      },
+      "CheckoutRequest": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string",
+            "description": "Wajib aktif"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Untuk pengiriman invoice digital"
+          },
+          "address": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          },
+          "shipping_method": {
+            "$ref": "#/components/schemas/ShippingMethod"
+          },
+          "payment_method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "payment_channel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Mis. gopay, ovo, shopeepay, bca, mandiri, bni, bri"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "cart_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Kosongkan untuk semua item keranjang"
+          }
+        },
+        "required": [
+          "customer_name",
+          "phone_whatsapp",
+          "address",
+          "shipping_method",
+          "payment_method"
+        ]
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "waiting_payment",
+          "paid",
+          "processing",
+          "shipped",
+          "completed",
+          "cancelled"
+        ],
+        "description": "Menunggu Pembayaran, Dibayar, Diproses, Dikirim, Selesai, Dibatalkan"
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "paid",
+          "expired",
+          "refunded"
+        ]
+      },
+      "OrderItem": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "variant_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "retail",
+              "pack"
+            ],
+            "description": "Eceran / Pack"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          }
+        }
+      },
+      "PaymentInfo": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "channel": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "pay_before": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Batas waktu bayar"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cash_received": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Uang tunai diterima (COD)",
+            "nullable": true
+          },
+          "qris_payload": {
+            "type": "string",
+            "nullable": true,
+            "description": "Payload QR (QRIS)"
+          },
+          "virtual_account_number": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "OrderSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "example": "RK-0014"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "shipping_method": {
+            "$ref": "#/components/schemas/ShippingMethod"
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "payment_method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "payment_status": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "tracking_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Order": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OrderSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "recipient_phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "format": "email",
+                "nullable": true
+              },
+              "address": {
+                "$ref": "#/components/schemas/ShippingAddress"
+              },
+              "shipping_service": {
+                "type": "string",
+                "example": "Diantar Penjual - Sameday Kurir Toko"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderItem"
+                }
+              },
+              "subtotal": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Nominal dalam Rupiah (tanpa desimal)"
+              },
+              "shipping_cost": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Nominal dalam Rupiah (tanpa desimal)"
+              },
+              "cod_handling_fee": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Nominal dalam Rupiah (tanpa desimal)"
+              },
+              "payment": {
+                "$ref": "#/components/schemas/PaymentInfo"
+              },
+              "courier": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "vehicle": {
+                    "type": "string"
+                  }
+                },
+                "description": "Info kurir toko (bila dikirim kurir toko)"
+              },
+              "timeline": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string",
+                      "example": "Pesanan Dibuat"
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              },
+              "note": {
+                "type": "string",
+                "nullable": true
+              },
+              "can_review": {
+                "type": "boolean"
+              }
+            }
+          }
+        ]
+      },
+      "OrderStatusInput": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "tracking_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "Wajib saat status = shipped untuk ekspedisi"
+          },
+          "cash_received": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Opsional, untuk COD saat selesai",
+            "nullable": true
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CourierLocation": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StockIn": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "variant_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "supplier": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unit_cost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "recorded_by": {
+            "type": "string",
+            "example": "Ariel"
+          }
+        }
+      },
+      "StockInInput": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer"
+          },
+          "supplier": {
+            "type": "string",
+            "nullable": true,
+            "example": "Grosir Kosmetik Surabaya"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 12
+          },
+          "unit_cost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Memperbarui harga modal produk",
+            "example": 28000
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "variant_id",
+          "quantity",
+          "unit_cost"
+        ]
+      },
+      "LowStockItem": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "stock": {
+            "type": "integer"
+          },
+          "min_stock": {
+            "type": "integer"
+          }
+        }
+      },
+      "DirectSaleItem": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Default harga eceran"
+          }
+        },
+        "required": [
+          "variant_id",
+          "quantity"
+        ]
+      },
+      "DirectSaleInput": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string",
+            "example": "Ibu Arini (Tetangga RT 03)"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/DirectSaleItem"
+            }
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "example": "Beli langsung door-to-door tunai"
+          }
+        },
+        "required": [
+          "customer_name",
+          "items"
+        ]
+      },
+      "DirectSale": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            }
+          }
+        }
+      },
+      "TopProduct": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "units_sold": {
+            "type": "integer"
+          },
+          "revenue": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          }
+        }
+      },
+      "MonthlyReport": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-11",
+            "pattern": "^\\d{4}-\\d{2}$"
+          },
+          "online_sales": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "online_order_count": {
+            "type": "integer"
+          },
+          "direct_sales": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "direct_transaction_count": {
+            "type": "integer"
+          },
+          "stock_in_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Total modal belanja grosir"
+          },
+          "gross_profit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Harga jual dikurangi modal tersimpan"
+          },
+          "total_units_sold": {
+            "type": "integer"
+          },
+          "average_order_value": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "gross_margin_percent": {
+            "type": "number",
+            "example": 46.7
+          },
+          "top_products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopProduct"
+            }
+          }
+        }
+      },
+      "DashboardSummary": {
+        "type": "object",
+        "properties": {
+          "needs_action": {
+            "type": "object",
+            "properties": {
+              "orders_to_process": {
+                "type": "integer"
+              },
+              "awaiting_payment": {
+                "type": "integer"
+              },
+              "low_stock_variants": {
+                "type": "integer"
+              }
+            }
+          },
+          "sales_this_month": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "sales_chart": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "month": {
+                  "type": "string",
+                  "example": "2026-11"
+                },
+                "total": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "description": "Nominal dalam Rupiah (tanpa desimal)"
+                }
+              }
+            },
+            "description": "6 bulan terakhir"
+          },
+          "sales_chart_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "top_selling": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_name": {
+                  "type": "string"
+                },
+                "units": {
+                  "type": "integer"
+                },
+                "percent": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "low_stock": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LowStockItem"
+            }
+          },
+          "recent_orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderSummary"
+            }
+          }
+        }
+      },
+      "StoreSettings": {
+        "type": "object",
+        "properties": {
+          "store_name": {
+            "type": "string",
+            "example": "RiasKu Official Store"
+          },
+          "admin_whatsapp": {
+            "type": "string",
+            "example": "081234567890",
+            "description": "Untuk tombol Tanya via WhatsApp dan notifikasi"
+          },
+          "origin_city": {
+            "type": "string",
+            "example": "Surabaya",
+            "description": "Dasar perhitungan ongkir JNE dan J&T"
+          },
+          "local_shipping_cost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Ongkir dalam Surabaya (kurir toko); 0 = gratis"
+          },
+          "min_stock_default": {
+            "type": "integer",
+            "example": 5,
+            "description": "Varian di bawah angka ini masuk daftar Segera Restock"
+          },
+          "payment_deadline_hours": {
+            "type": "integer",
+            "example": 24,
+            "description": "Pesanan belum bayar setelah batas ini dibatalkan otomatis"
+          }
+        },
+        "required": [
+          "store_name",
+          "admin_whatsapp",
+          "origin_city",
+          "local_shipping_cost",
+          "min_stock_default",
+          "payment_deadline_hours"
+        ]
+      },
+      "AiChatRequest": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Kosongkan untuk percakapan baru"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "AiChatResponse": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "reply": {
+            "type": "string"
+          },
+          "suggested_products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductSummary"
+            }
+          },
+          "quick_replies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Cek Ketersediaan Shade 03",
+              "Bisa COD Surabaya Hari Ini?"
+            ]
+          }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "example": "RSK-SRV-BRD"
+          },
+          "name": {
+            "type": "string",
+            "example": "Paket Rias Pengantin Modern"
+          },
+          "category": {
+            "type": "string",
+            "example": "Rias Pengantin",
+            "description": "Rias Pengantin / Rias Wisuda / dll."
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "rating_average": {
+            "type": "number"
+          },
+          "booking_count": {
+            "type": "integer"
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "price"
+        ]
+      },
+      "ServiceInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Nominal dalam Rupiah (tanpa desimal)"
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          },
+          "image_id": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "price"
+        ]
+      },
+      "BookingStatus": {
+        "type": "string",
+        "enum": [
+          "requested",
+          "confirmed",
+          "completed",
+          "cancelled"
+        ]
+      },
+      "BookingInput": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "integer"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "event_time": {
+            "type": "string",
+            "example": "08:00"
+          },
+          "location": {
+            "type": "string",
+            "description": "Lokasi acara / rias"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Mis. konsultasi undertone, jumlah orang"
+          }
+        },
+        "required": [
+          "service_id",
+          "customer_name",
+          "phone_whatsapp",
+          "event_date",
+          "location"
+        ]
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "example": "BK-0001"
+          },
+          "service_id": {
+            "type": "integer"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "event_time": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BookingStatusInput": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "WishlistInput": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "WishlistItem": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "$ref": "#/components/schemas/ProductSummary"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RestockSubscriptionInput": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "RestockSubscription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "variant_id": {
+            "type": "integer"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Terisi saat stok varian kembali tersedia dan notifikasi dikirim"
+          }
+        }
+      },
+      "SavedAddress": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string",
+            "example": "Rumah"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string"
+          },
+          "address": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          },
+          "is_default": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SavedAddressInput": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string"
+          },
+          "address": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          },
+          "is_default": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "recipient_name",
+          "phone_whatsapp",
+          "address"
+        ]
+      },
+      "ProfileUpdateInput": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "phone_whatsapp": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}
