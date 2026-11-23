@@ -14,7 +14,9 @@ class ProdukController extends Controller
         $query = Produk::query()
             ->where('is_active', true)
             ->with(['kategori', 'activeVarians', 'primaryFoto'])
-            ->withSum(['activeVarians as active_stock_sum'], 'stock');
+            ->withSum(['activeVarians as active_stock_sum'], 'stock')
+            ->withCount(['ulasans as review_count' => fn ($review) => $review->where('status', 'approved')])
+            ->withAvg(['ulasans as reviews_avg_rating' => fn ($review) => $review->where('status', 'approved')], 'rating');
 
         if ($search = trim((string) ($request->query('q') ?? $request->query('search')))) {
             $query->where(function ($sub) use ($search) {
@@ -53,6 +55,9 @@ class ProdukController extends Controller
                 $query->orderBy('name', 'asc');
                 break;
             case 'rating':
+                $query->orderByRaw('reviews_avg_rating IS NULL ASC')
+                    ->orderByDesc('reviews_avg_rating');
+                break;
             case 'recommended':
             default:
                 $query->orderBy('id', 'desc');
@@ -93,6 +98,8 @@ class ProdukController extends Controller
             ->where('is_active', true)
             ->with(['kategori', 'activeVarians', 'fotos', 'primaryFoto'])
             ->withSum(['activeVarians as active_stock_sum'], 'stock')
+            ->withCount(['ulasans as review_count' => fn ($review) => $review->where('status', 'approved')])
+            ->withAvg(['ulasans as reviews_avg_rating' => fn ($review) => $review->where('status', 'approved')], 'rating')
             ->find($id);
 
         if (! $product) {
