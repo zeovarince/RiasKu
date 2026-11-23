@@ -22,6 +22,11 @@ Dokumen ini merangkum endpoint API pelanggan yang dipakai frontend RiasKu.
 | GET | `/api/categories` | Publik | Daftar kategori |
 | GET | `/api/products` | Publik | Katalog dan pencarian produk |
 | GET | `/api/products/{id}` | Publik | Detail produk |
+| GET | `/api/products/{product}/reviews` | Publik | Daftar ulasan produk yang tampil |
+| POST | `/api/products/{product}/reviews` | Pelanggan | Menambah atau memperbarui ulasan sendiri |
+| DELETE | `/api/products/{product}/reviews` | Pelanggan | Menghapus ulasan sendiri |
+| GET | `/api/admin/reviews` | Admin | Daftar ulasan untuk moderasi |
+| PATCH | `/api/admin/reviews/{review}` | Admin | Mengubah status ulasan |
 | GET | `/api/shipping/zones?q=` | Publik | Zona aktif; dibatasi 60 request per menit |
 | POST | `/api/shipping/rates` | Pelanggan | Quote berat dan ongkir |
 | POST | `/api/checkout` | Pelanggan | Membuat pesanan |
@@ -30,6 +35,36 @@ Dokumen ini merangkum endpoint API pelanggan yang dipakai frontend RiasKu.
 
 `GET /api/products` menerima parameter `q` atau `search`, `category`, `sort`, `per_page`, dan `page`.
 Respons daftar produk dan kategori menggunakan envelope `message` dan `data`; daftar produk dapat menyertakan `meta` saat paginasi. Frontend menormalisasi atribut produk dan variasi sebelum dipakai oleh komponen.
+
+## Rating dan ulasan produk (PPL-25)
+
+`GET /api/products/{product}/reviews` mengembalikan hanya ulasan berstatus `approved`, diurutkan dari yang terbaru. Tanpa parameter `page` atau `per_page`, respons berisi maksimal 50 ulasan:
+
+```json
+{
+  "message": "Daftar ulasan berhasil dimuat.",
+  "data": [
+    {
+      "id": 1,
+      "product_id": 12,
+      "user_name": "pelanggan",
+      "rating": 5,
+      "comment": "Teksturnya ringan dan tahan seharian.",
+      "created_at": "2026-11-23T04:00:00.000000Z"
+    }
+  ]
+}
+```
+
+Kirim `page` dan/atau `per_page` (maksimal 50) untuk mendapatkan `meta` berisi `current_page`, `last_page`, `per_page`, dan `total`.
+
+`POST /api/products/{product}/reviews` memerlukan token pelanggan. Request hanya mengirim `rating` (bilangan bulat 1-5) dan `comment` (5-500 karakter). `user_name` ditentukan server dari username pelanggan yang login, bukan dari request. Satu pelanggan hanya memiliki satu ulasan per produk; pengiriman kedua memperbarui ulasan yang ada dan mengembalikan HTTP `200` (pengiriman pertama `201`). Ulasan baru otomatis berstatus `approved`.
+
+`DELETE /api/products/{product}/reviews` menghapus ulasan milik pelanggan yang sedang login.
+
+`GET /api/admin/reviews` menerima `q`, `status` (`all`, `approved`, atau `hidden`), serta `per_page`, dan mengembalikan data dengan `id`, `product_id`, `product_name`, `product_sku`, `customer`, `customer_email`, `rating`, `comment`, `status`, dan `created_at`. `PATCH /api/admin/reviews/{review}` menerima `status` berupa `approved` atau `hidden`. Ulasan yang disembunyikan tidak masuk daftar publik dan tidak dihitung pada `rating` maupun `review_count` produk.
+
+Atribut `rating` dan `review_count` pada respons produk dihitung dari ulasan berstatus `approved` (bukan nilai hardcoded). Rata-rata dibulatkan menjadi satu angka desimal; produk tanpa ulasan mengembalikan `rating` bernilai `null`.
 
 ## Quote ongkir
 
