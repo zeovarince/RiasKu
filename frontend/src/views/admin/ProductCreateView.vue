@@ -36,6 +36,7 @@ const form = ref({
   bpom_number: '',
   description: '',
   is_active: true,
+  min_stock: 5,
   initial_stock: 0,
 })
 
@@ -122,6 +123,7 @@ async function loadProduct() {
       bpom_number: p.bpom_number || '',
       description: p.description || '',
       is_active: Boolean(p.is_active),
+      min_stock: p.min_stock !== undefined && p.min_stock !== null ? p.min_stock : 5,
       initial_stock: p.total_stock || 0,
     }
 
@@ -251,6 +253,7 @@ async function saveProduct() {
     bpom_number: form.value.bpom_number || null,
     description: form.value.description || null,
     is_active: form.value.is_active,
+    min_stock: Number(form.value.min_stock) >= 0 ? Number(form.value.min_stock) : 5,
   }
 
   if (form.value.is_pack) {
@@ -629,6 +632,22 @@ onMounted(() => {
             >
               <AdminIcon name="plus" :size="14" /> Tambah Varian Baru
             </button>
+          </div>
+
+          <!-- Min stock threshold field -->
+          <div class="admin-standard-variant" style="margin-top: 18px; border-top: 1px dashed var(--admin-border, #F0DEDB); padding-top: 16px;">
+            <label class="admin-field">
+              Batas Minimum Stok (Peringatan Restock)
+              <input
+                v-model.number="form.min_stock"
+                type="number"
+                min="0"
+                placeholder="5"
+                :class="{ 'is-invalid': errors.min_stock }"
+              />
+              <small v-if="errors.min_stock" class="admin-error-text">{{ errors.min_stock[0] }}</small>
+              <small class="admin-hint-text">Sistem akan memicu peringatan restock ("Stok Menipis" / "Stok Habis") saat total stok &le; nilai ini (default: 5 pcs).</small>
+            </label>
           </div>
         </article>
 

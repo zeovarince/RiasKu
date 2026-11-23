@@ -38,7 +38,11 @@ async function fetchProducts(page = 1) {
     }
     if (search.value.trim()) params.search = search.value.trim()
     if (selectedCategory.value) params.kategori_id = selectedCategory.value
-    if (selectedStockLabel.value) params.stock_label = selectedStockLabel.value
+    if (selectedStockLabel.value === 'restock') {
+      params.restock = 1
+    } else if (selectedStockLabel.value) {
+      params.stock_label = selectedStockLabel.value
+    }
     if (selectedActive.value !== '') params.is_active = selectedActive.value
 
     const res = await adminService.getProducts(params)
@@ -142,6 +146,7 @@ onMounted(() => {
 
           <select v-model="selectedStockLabel" class="admin-filter-select">
             <option value="">Semua Label Stok</option>
+            <option value="restock">Perlu Restock</option>
             <option value="Tersedia">Tersedia</option>
             <option value="Pre-Order">Pre-Order</option>
             <option value="Stok Habis">Stok Habis</option>
@@ -166,6 +171,7 @@ onMounted(() => {
               <th>Harga Eceran</th>
               <th>Harga Pack</th>
               <th>Stok</th>
+              <th>Restock</th>
               <th>Label Stok</th>
               <th>Status</th>
               <th>Aksi</th>
@@ -173,10 +179,10 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="9" class="admin-empty">Memuat produk...</td>
+              <td colspan="10" class="admin-empty">Memuat produk...</td>
             </tr>
             <tr v-else-if="!products.length">
-              <td colspan="9" class="admin-empty">Produk tidak ditemukan.</td>
+              <td colspan="10" class="admin-empty">Produk tidak ditemukan.</td>
             </tr>
             <tr v-for="product in products" :key="product.id" :class="{ 'row-inactive': !product.is_active }">
               <td>
@@ -208,7 +214,13 @@ onMounted(() => {
                 </span>
                 <span v-else class="text-muted">-</span>
               </td>
-              <td>{{ product.total_stock }} pcs</td>
+              <td>{{ product.total_stock }} pcs <small class="pack-qty">min. {{ product.min_stock }} pcs</small></td>
+              <td>
+                <AdminBadge v-if="product.needs_restock" :tone="product.restock_status === 'Stok Habis' ? 'rose' : 'gold'">
+                  {{ product.restock_status }}
+                </AdminBadge>
+                <span v-else class="text-muted">Aman</span>
+              </td>
               <td>
                 <AdminBadge :tone="getTone(product.stock_label)">
                   {{ product.stock_label }}
@@ -237,6 +249,14 @@ onMounted(() => {
                     title="Ubah Produk"
                   >
                     <AdminIcon name="edit" :size="15" />
+                  </RouterLink>
+                  <RouterLink
+                    v-if="product.needs_restock"
+                    :to="{ path: '/admin/inventory/incoming', query: { product_id: product.id } }"
+                    class="admin-mini-link"
+                    title="Catat barang masuk untuk produk ini"
+                  >
+                    Restock
                   </RouterLink>
                 </div>
               </td>

@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Pelanggan;
+use App\Services\GoogleCustomerService;
 use App\Services\GoogleIdentityVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CustomerAuthController extends Controller
 {
@@ -92,45 +95,42 @@ class CustomerAuthController extends Controller
         return $this->authenticated($customer);
     }
 
-    public function google(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
+    public function google(Request $request, GoogleIdentityVerifier $verifier, GoogleCustomerService $customers): JsonResponse
     {
         $data = $request->validate(['credential' => ['required', 'string']]);
         $identity = $verifier->verify($data['credential']);
 
-        if (! $identity || ! filter_var($identity['email'] ?? null, FILTER_VALIDATE_EMAIL) || empty($identity['sub']) || ($identity['email_verified'] ?? false) !== true) {
+        if (! $identity) {
             return response()->json(['message' => 'Identitas Google tidak valid atau email belum terverifikasi.'], 401);
         }
 
-        $email = Str::lower($identity['email']);
-        $customer = Pelanggan::where('google_id', $identity['sub'])->first();
+        try {
+            $customer = $customers->resolve($identity);
+        } catch (HttpException $exception) {
+            return response()->json(['message' => $exception->getMessage()], $exception->getStatusCode());
+        }
+
+        return $this->authenticated($customer);
+    }
+
+    /**
+     * Menukar kode sekali pakai dari alur redirect OAuth Google menjadi token API.
+     */
+    public function googleExchange(Request $request): JsonResponse
+    {
+        $data = $request->validate(['code' => ['required', 'string']]);
+
+        /** @var array{pelanggan_id?: int}|null $payload */
+        $payload = Cache::pull('google-login:'.hash('sha256', $data['code']));
+
+        if (! is_array($payload) || empty($payload['pelanggan_id'])) {
+            return response()->json(['message' => 'Sesi login Google sudah kedaluwarsa. Silakan ulangi proses masuk dengan Google.'], 422);
+        }
+
+        $customer = Pelanggan::find($payload['pelanggan_id']);
 
         if (! $customer) {
-            $customer = Pelanggan::where('email', $email)->first();
-
-            if ($customer && $customer->google_id && $customer->google_id !== $identity['sub']) {
-                return response()->json(['message' => 'Email sudah terhubung ke akun Google lain.'], 409);
-            }
-
-            if ($customer) {
-                $customer->forceFill(['google_id' => $identity['sub']])->save();
-            } else {
-                $base = Str::slug($identity['name'] ?? Str::before($email, '@'), '_');
-                $base = Str::limit($base !== '' ? $base : 'pelanggan', 70, '');
-                $username = $base;
-                $suffix = 1;
-
-                while (Pelanggan::where('username', $username)->exists()) {
-                    $username = Str::limit($base, 70, '').$suffix++;
-                }
-
-                $customer = Pelanggan::create([
-                    'username' => $username,
-                    'email' => $email,
-                    'google_id' => $identity['sub'],
-                    'password_hash' => null,
-                    'is_active' => true,
-                ]);
-            }
+            return response()->json(['message' => 'Akun pelanggan tidak ditemukan.'], 404);
         }
 
         if (! $customer->is_active) {

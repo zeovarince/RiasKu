@@ -1,7 +1,10 @@
 <script setup>
+import { onMounted, ref } from 'vue'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminBadge from './AdminBadge.vue'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
+import { adminService } from '@/services/adminService'
+
 const metrics = [
   { label: 'Produk aktif', value: '24', note: '+3 produk bulan ini', icon: 'package', tone: 'rose' },
   { label: 'Menunggu pembayaran', value: '5', note: 'Perlu ditindaklanjuti', icon: 'wallet', tone: 'gold' },
@@ -13,11 +16,28 @@ const orders = [
   ['RK-0013', 'Megan Utami', '1 item', 'Rp95.000', 'QRIS', 'Menunggu', 'gold'],
   ['RK-0012', 'Dinda Permata', '2 item', 'Rp125.000', 'Transfer BCA', 'Lunas', 'green'],
 ]
-const stock = [
-  ['Glow Velvet Lip Tint', 'RSK-LIP-01', '8 pcs', 'Stok aman', 'green'],
-  ['Dewy Cushion SPF 35 PA+++ ', 'RSK-CUSH-02', '3 pcs', 'Stok menipis', 'gold'],
-  ['Gentle Sunscreen Gel 50ml', 'RSK-SUN-01', '1 pcs', 'Segera restock', 'rose'],
-]
+const stockRows = ref([])
+const loadingRestock = ref(false)
+
+function restockTone(status) {
+  if (status === 'Stok Habis') return 'rose'
+  if (status === 'Stok Menipis') return 'gold'
+  return 'green'
+}
+
+async function loadRestock() {
+  loadingRestock.value = true
+  try {
+    const res = await adminService.getRestockAlerts({ per_page: 5 })
+    stockRows.value = res.data.data || []
+  } catch (err) {
+    console.error('Gagal memuat peringatan restock:', err)
+  } finally {
+    loadingRestock.value = false
+  }
+}
+
+onMounted(loadRestock)
 </script>
 <template>
   <section class="admin-page">
@@ -56,8 +76,22 @@ const stock = [
       </article>
 
       <article class="admin-panel admin-stock-panel">
-        <div class="admin-panel-heading"><div><h2>Segera Restock</h2><p>Produk dengan persediaan terbatas</p></div><RouterLink to="/admin/inventory/incoming" class="admin-text-link">Lihat semua</RouterLink></div>
-        <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produk & SKU</th><th>Stok tersedia</th><th>Status</th><th>Aksi</th></tr></thead><tbody><tr v-for="item in stock" :key="item[1]"><td><strong>{{ item[0] }}</strong><small>{{ item[1] }}</small></td><td>{{ item[2] }}</td><td><AdminBadge :tone="item[4]">{{ item[3] }}</AdminBadge></td><td><RouterLink to="/admin/inventory/incoming" class="admin-mini-link">Restock</RouterLink></td></tr></tbody></table></div>
+        <div class="admin-panel-heading"><div><h2>Segera Restock</h2><p>Produk dengan persediaan pada atau di bawah batas minimum</p></div><RouterLink to="/admin/inventory/incoming" class="admin-text-link">Lihat semua</RouterLink></div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>Produk & SKU</th><th>Stok tersedia</th><th>Status</th><th>Aksi</th></tr></thead>
+            <tbody>
+              <tr v-if="loadingRestock"><td colspan="4" class="admin-empty">Memuat peringatan restock...</td></tr>
+              <tr v-else-if="!stockRows.length"><td colspan="4" class="admin-empty">Semua produk memiliki stok aman.</td></tr>
+              <tr v-for="product in stockRows" :key="product.id">
+                <td><strong>{{ product.name }}</strong><small>{{ product.sku }}</small></td>
+                <td>{{ product.total_stock }} pcs <small>min. {{ product.min_stock }} pcs</small></td>
+                <td><AdminBadge :tone="restockTone(product.restock_status)">{{ product.restock_status }}</AdminBadge></td>
+                <td><RouterLink :to="{ path: '/admin/inventory/incoming', query: { product_id: product.id } }" class="admin-mini-link">Restock</RouterLink></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
 
       <aside class="admin-side-feature"><span class="admin-feature-mark">R</span><div><AdminBadge tone="cream">Perlu perhatian</AdminBadge><h3>5 pesanan menunggu pembayaran</h3><p>Pastikan status pembayaran diperbarui sebelum pesanan diproses.</p><RouterLink to="/admin/orders" class="admin-btn admin-btn-light">Lihat pesanan <AdminIcon name="arrow-left" :size="14"/></RouterLink></div></aside>

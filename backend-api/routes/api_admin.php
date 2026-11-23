@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\OrderManagementController;
 use App\Http\Controllers\Api\Admin\ProdukController;
 use App\Http\Controllers\Api\Admin\ProdukFotoController;
 use App\Http\Controllers\Api\Admin\ProdukVarianController;
+use App\Http\Controllers\Api\Admin\StokMasukController;
 use App\Http\Controllers\Api\Admin\UlasanProdukController as AdminUlasanProdukController;
 use App\Http\Middleware\EnsureAdmin;
 use Illuminate\Http\Request;
@@ -57,6 +58,14 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     // Rating & Ulasan Produk (PPL-25)
     Route::get('/reviews', [AdminUlasanProdukController::class, 'index']);
     Route::patch('/reviews/{review}', [AdminUlasanProdukController::class, 'update']);
+
+    // Barang Masuk & Peringatan Restock (PPL-23)
+    Route::get('/inventory/incoming', [StokMasukController::class, 'index']);
+    Route::post('/inventory/incoming', [StokMasukController::class, 'store']);
+    Route::get('/inventory/restock', [StokMasukController::class, 'lowStock']);
+    Route::get('/stock-in', [StokMasukController::class, 'index']);
+    Route::post('/stock-in', [StokMasukController::class, 'store']);
+    Route::get('/stock/low', [StokMasukController::class, 'lowStock']);
 
     // Aliases
     Route::get('/categories', [KategoriController::class, 'index']);

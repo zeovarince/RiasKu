@@ -34,6 +34,10 @@ export const adminService = {
   orderDetail: (id) => dashboardApi.get(`/orders/${id}`),
   updateOrderStatus: (id, payload) => dashboardApi.patch(`/orders/${id}/status`, payload),
   confirmCodPayment: (id, payload = {}) => dashboardApi.post(`/orders/${id}/confirm-cod-payment`, payload),
+  // Barang masuk & peringatan restock (PPL-23)
+  getIncomingStocks: (params = {}) => dashboardApi.get('/inventory/incoming', { params }),
+  createIncomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
+  getRestockAlerts: (params = {}) => dashboardApi.get('/inventory/restock', { params }),
   incomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
   directSales: (params = {}) => dashboardApi.get('/sales/direct', { params }),
   monthlyReport: (params = {}) => dashboardApi.get('/reports/monthly', { params }),

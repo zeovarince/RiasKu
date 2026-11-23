@@ -21,7 +21,11 @@ return [
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        // Harus persis sama dengan Authorized redirect URI di Google Cloud Console.
+        'redirect' => env('GOOGLE_REDIRECT_URI', rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/auth/google/callback'),
     ],
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
     'resend' => [
         'key' => env('RESEND_API_KEY'),

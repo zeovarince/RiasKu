@@ -94,7 +94,7 @@ function submitGoogle(credential) {
     </form>
 
     <div class="social-auth">
-      <div class="social-divider"><span>atau</span></div>
+      <div class="social-divider"><span>atau masuk dengan</span></div>
       <GoogleSignInButton :disabled="isLoading" @credential="submitGoogle" />
     </div>
     <p class="switch">Belum punya akun? <RouterLink class="link-btn" :to="{ name: 'register', query: route.query }">Daftar sekarang</RouterLink></p>
