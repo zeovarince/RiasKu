@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { login as loginRequest, register as registerRequest } from '@/services/authService'
+import { createProductReview } from '@/services/reviewService'
 import AiChatPanel from '@/components/AiChatPanel.vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 
 const ui = useUiStore()
+const auth = useAuthStore()
 const router = useRouter()
 const modal = computed(() => ui.activeModal)
 const authMode = ref('login')
@@ -18,6 +21,8 @@ const reviewRating = ref(5)
 const reviewText = ref('')
 const reviewTags = ref(['Tahan Seharian'])
 const reviewSubmitted = ref(false)
+const reviewSubmitting = ref(false)
+const reviewError = ref('')
 
 watch(modal, (value) => {
   if (value?.type === 'login' || value?.type === 'register') {
@@ -30,6 +35,8 @@ watch(modal, (value) => {
     reviewText.value = ''
     reviewTags.value = ['Tahan Seharian']
     reviewSubmitted.value = false
+    reviewSubmitting.value = false
+    reviewError.value = ''
   }
 })
 
@@ -80,9 +87,36 @@ function toggleReviewTag(tag) {
   }
 }
 
-function submitReview() {
+async function submitReview() {
   if (!reviewText.value.trim()) return
-  reviewSubmitted.value = true
+
+  if (!auth.isAuthenticated) {
+    ui.openModal('login')
+    return
+  }
+
+  const productId = modal.value?.payload?.product?.id
+  if (!productId) return
+
+  reviewSubmitting.value = true
+  reviewError.value = ''
+
+  try {
+    const note = reviewTags.value.length ? `\n\nPoin: ${reviewTags.value.join(', ')}` : ''
+    await createProductReview(productId, {
+      rating: reviewRating.value,
+      comment: `${reviewText.value.trim()}${note}`,
+    })
+
+    reviewSubmitted.value = true
+    window.dispatchEvent(new CustomEvent('riasku:review-created', {
+      detail: { productId: String(productId) },
+    }))
+  } catch (error) {
+    reviewError.value = error.message || 'Gagal mengirim ulasan.'
+  } finally {
+    reviewSubmitting.value = false
+  }
 }
 </script>
 
@@ -143,9 +177,10 @@ function submitReview() {
               </div>
               <label class="review-text-label">Ceritakan pengalaman Anda<textarea v-model="reviewText" class="form-control" rows="4" maxlength="500" placeholder="Bagaimana produk ini saat digunakan? Ceritakan pengalaman Anda..."></textarea></label>
               <div class="review-count">{{ reviewText.length }}/500 karakter</div>
-              <div class="modal-actions"><button type="button" class="button button-outline" @click="close">Batal</button><button type="button" class="button button-primary" :disabled="!reviewText.trim()" @click="submitReview">Kirim Ulasan Sekarang</button></div>
+              <p v-if="reviewError" class="form-error">{{ reviewError }}</p>
+              <div class="modal-actions"><button type="button" class="button button-outline" @click="close">Batal</button><button type="button" class="button button-primary" :disabled="!reviewText.trim() || reviewSubmitting" @click="submitReview">{{ reviewSubmitting ? 'Mengirim...' : 'Kirim Ulasan Sekarang' }}</button></div>
             </template>
-            <div v-else class="review-success"><span>✓</span><strong>Terima kasih atas ulasan Anda!</strong><p>Ulasan berhasil dicatat pada sesi demo frontend.</p><button class="button button-primary" type="button" @click="close">Selesai</button></div>
+            <div v-else class="review-success"><span>✓</span><strong>Terima kasih atas ulasan Anda!</strong><p>Ulasan Anda berhasil disimpan dan akan tampil pada halaman produk.</p><button class="button button-primary" type="button" @click="close">Selesai</button></div>
           </template>
         </section>
       </div>

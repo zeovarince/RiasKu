@@ -84,6 +84,11 @@ class Produk extends Model
         return $this->hasOne(ProdukFoto::class, 'produk_id')->where('is_primary', true);
     }
 
+    public function ulasans(): HasMany
+    {
+        return $this->hasMany(UlasanProduk::class, 'produk_id');
+    }
+
     public function getTotalStockAttribute(): int
     {
         if (array_key_exists('active_stock_sum', $this->attributes) && $this->attributes['active_stock_sum'] !== null) {
@@ -255,37 +260,24 @@ class Produk extends Model
 
     public function getRatingAttribute(): ?string
     {
-        $sku = (string) $this->sku;
-        if (str_contains($sku, 'CUSH') || str_contains($sku, 'POWD')) {
-            return '4.9';
-        }
-        if (str_contains($sku, 'LIP')) {
-            return '4.8';
-        }
-        if (str_contains($sku, 'BRV')) {
-            return '5.0';
+        if (array_key_exists('reviews_avg_rating', $this->attributes)) {
+            $average = $this->attributes['reviews_avg_rating'];
+
+            return $average === null ? null : number_format((float) $average, 1, '.', '');
         }
 
-        return '4.8';
+        $average = $this->ulasans()->approved()->avg('rating');
+
+        return $average === null ? null : number_format((float) $average, 1, '.', '');
     }
 
     public function getReviewCountAttribute(): int
     {
-        $sku = (string) $this->sku;
-        if (str_contains($sku, 'CUSH')) {
-            return 184;
-        }
-        if (str_contains($sku, 'LIP')) {
-            return 92;
-        }
-        if (str_contains($sku, 'POWD')) {
-            return 64;
-        }
-        if (str_contains($sku, 'BRV')) {
-            return 42;
+        if (array_key_exists('review_count', $this->attributes)) {
+            return (int) $this->attributes['review_count'];
         }
 
-        return 25;
+        return (int) $this->ulasans()->approved()->count();
     }
 
     public function getVariantsAttribute(): EloquentCollection

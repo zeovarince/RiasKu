@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 import { useCartStore } from '@/stores/cart'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { getProductById } from '@/services/productService'
 import { formatRupiah } from '@/utils/currency'
 import ReviewList from '@/components/ReviewList.vue'
@@ -13,6 +14,7 @@ import { getProductReviews, createProductReview } from '@/services/reviewService
 const route = useRoute()
 const cart = useCartStore()
 const ui = useUiStore()
+const auth = useAuthStore()
 const product = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -100,14 +102,20 @@ async function loadReviews(id) {
 
 async function handleReviewSubmit(payload) {
   if (!product.value) return
+  if (!auth.isAuthenticated) {
+    reviewError.value = 'Silakan masuk terlebih dahulu untuk menulis ulasan.'
+    ui.openModal('login')
+    return
+  }
+
   reviewSubmitting.value = true
   reviewMessage.value = ''
   reviewError.value = ''
   try {
     const created = await createProductReview(product.value.id, payload)
     if (created) {
-      reviews.value = [created, ...reviews.value]
-      reviewMessage.value = 'Terima kasih! Ulasanmu berhasil ditambahkan.'
+      await loadReviews(product.value.id)
+      reviewMessage.value = 'Terima kasih! Ulasanmu berhasil disimpan.'
     }
   } catch (err) {
     reviewError.value = err.message || 'Gagal mengirim ulasan.'
@@ -124,6 +132,16 @@ watch(
   },
   { immediate: true }
 )
+
+function handleReviewCreated(event) {
+  const productId = event.detail?.productId
+  if (productId && String(productId) === String(route.params.id)) {
+    loadReviews(route.params.id)
+  }
+}
+
+onMounted(() => window.addEventListener('riasku:review-created', handleReviewCreated))
+onBeforeUnmount(() => window.removeEventListener('riasku:review-created', handleReviewCreated))
 
 </script>
 
@@ -205,7 +223,12 @@ watch(
       <p v-if="reviewError" class="form-error">{{ reviewError }}</p>
       <div class="product-reviews-grid">
         <ReviewList :reviews="reviews" :loading="reviewsLoading" />
-        <ReviewForm :submitting="reviewSubmitting" @submit="handleReviewSubmit" />
+        <ReviewForm
+          :submitting="reviewSubmitting"
+          :require-login="!auth.isAuthenticated"
+          @submit="handleReviewSubmit"
+          @require-login="ui.openModal('login')"
+        />
       </div>
     </div>
   </section>

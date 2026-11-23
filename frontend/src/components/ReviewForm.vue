@@ -6,10 +6,14 @@ const props = defineProps({
   submitting: {
     type: Boolean,
     default: false
+  },
+  requireLogin: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['submit', 'require-login'])
 
 const userName = ref('')
 const rating = ref(5)
@@ -18,6 +22,11 @@ const errorMessage = ref('')
 
 function handleSubmit() {
   errorMessage.value = ''
+
+  if (props.requireLogin) {
+    emit('require-login')
+    return
+  }
 
   if (rating.value < 1 || rating.value > 5) {
     errorMessage.value = 'Silakan pilih rating 1 sampai 5 bintang.'
@@ -45,6 +54,8 @@ function handleSubmit() {
   <form class="review-form" @submit.prevent="handleSubmit">
     <h3 class="review-form-title">Tulis Ulasan Kamu</h3>
 
+    <p v-if="requireLogin" class="form-notice">Masuk ke akun RiasKu untuk menulis ulasan.</p>
+
     <div class="form-group">
       <label for="review-name">Nama (opsional)</label>
       <input
@@ -53,7 +64,7 @@ function handleSubmit() {
         type="text"
         class="form-control"
         placeholder="Contoh: Habiba"
-        :disabled="submitting"
+        :disabled="submitting || requireLogin"
       />
     </div>
 
@@ -73,14 +84,14 @@ function handleSubmit() {
         rows="3"
         class="form-control"
         placeholder="Bagikan pengalamanmu menggunakan produk ini..."
-        :disabled="submitting"
+        :disabled="submitting || requireLogin"
         required
       ></textarea>
     </div>
 
     <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
 
-    <button type="submit" class="button button-primary" :disabled="submitting">
+    <button type="submit" class="button button-primary" :disabled="submitting || requireLogin">
       {{ submitting ? 'Mengirim...' : 'Kirim Ulasan' }}
     </button>
   </form>
