@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\ShippingController;
+use App\Http\Controllers\Api\UlasanProdukController;
 use App\Http\Middleware\EnsurePelanggan;
 use App\Services\ShippingCostService;
 use Illuminate\Http\Request;
@@ -30,6 +31,9 @@ Route::get('/produk', [ProdukController::class, 'index']);
 
 Route::get('/products/{id}', [ProdukController::class, 'show']);
 Route::get('/produk/{id}', [ProdukController::class, 'show']);
+
+// Rating & Ulasan Produk (PPL-25)
+Route::get('/products/{product}/reviews', [UlasanProdukController::class, 'index']);
 
 Route::get('/shipping/zones', [ShippingController::class, 'zones'])->middleware('throttle:60,1');
 
@@ -81,6 +85,10 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
     Route::get('/payments/{id}', [PaymentController::class, 'status']);
     Route::post('/payments/{id}/simulate-pay', [PaymentController::class, 'simulateSuccess']);
     Route::post('/payments/{orderNumber}/sync-status', [PaymentController::class, 'syncStatus']);
+
+    // Rating & Ulasan Produk (PPL-25)
+    Route::post('/products/{product}/reviews', [UlasanProdukController::class, 'store'])->middleware('throttle:10,1');
+    Route::delete('/products/{product}/reviews', [UlasanProdukController::class, 'destroy']);
 
     // Remote Cart Endpoints (PPL-16)
     Route::get('/cart', [CartController::class, 'index']);

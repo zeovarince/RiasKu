@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\OrderManagementController;
 use App\Http\Controllers\Api\Admin\ProdukController;
 use App\Http\Controllers\Api\Admin\ProdukFotoController;
 use App\Http\Controllers\Api\Admin\ProdukVarianController;
+use App\Http\Controllers\Api\Admin\UlasanProdukController as AdminUlasanProdukController;
 use App\Http\Middleware\EnsureAdmin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -52,6 +53,10 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     Route::get('/orders/{id}', [OrderManagementController::class, 'show']);
     Route::patch('/orders/{id}/status', [OrderManagementController::class, 'updateStatus']);
     Route::post('/orders/{id}/confirm-cod-payment', [OrderManagementController::class, 'confirmCodPayment']);
+
+    // Rating & Ulasan Produk (PPL-25)
+    Route::get('/reviews', [AdminUlasanProdukController::class, 'index']);
+    Route::patch('/reviews/{review}', [AdminUlasanProdukController::class, 'update']);
 
     // Aliases
     Route::get('/categories', [KategoriController::class, 'index']);
