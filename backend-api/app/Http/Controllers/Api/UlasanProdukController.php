@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Produk;
 use App\Models\UlasanProduk;
+use App\Services\BestSellerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class UlasanProdukController extends Controller
 {
+    public function __construct(protected BestSellerService $bestSellers) {}
+
     public function index(Request $request, int $product): JsonResponse
     {
         $produk = Produk::query()
@@ -91,6 +94,8 @@ class UlasanProdukController extends Controller
             ],
         );
 
+        $this->bestSellers->refreshForProduct($produk->id);
+
         return response()->json([
             'message' => $review->wasRecentlyCreated
                 ? 'Ulasan berhasil ditambahkan.'
@@ -113,6 +118,7 @@ class UlasanProdukController extends Controller
         }
 
         $review->delete();
+        $this->bestSellers->refreshForProduct((int) $review->produk_id);
 
         return response()->json([
             'message' => 'Ulasan berhasil dihapus.',

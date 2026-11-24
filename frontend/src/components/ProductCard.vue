@@ -51,6 +51,15 @@ const quickAddLabel = computed(() => {
   return 'Stok Habis'
 })
 
+const bestSellerBadge = computed(() => {
+  const rank = Number(props.product.bestSellerRank ?? props.product.best_seller_rank ?? 0)
+  const score = Number(props.product.bestSellerScore ?? props.product.best_seller_score ?? 0)
+  const flagged = props.product.isBestSeller ?? props.product.is_best_seller ?? score > 0
+
+  if (rank > 0) return rank <= 3 ? `TOP #${rank} BEST SELLER` : 'BEST SELLER'
+  return flagged ? 'BEST SELLER' : null
+})
+
 function addProduct() {
   if (!canQuickAdd.value) return
   cart.addItem(props.product, 1, defaultVariant.value)
@@ -60,7 +69,10 @@ function addProduct() {
 <template>
   <article class="product-card">
     <div class="product-visual">
-      <span v-if="product.tag" class="product-tag" :class="{ 'tag-outline': product.tag === 'COD SURABAYA' }">{{ product.tag }}</span>
+      <div class="product-badge-stack">
+        <span v-if="bestSellerBadge" class="product-badge-best-seller">{{ bestSellerBadge }}</span>
+        <span v-if="product.tag" class="product-tag" :class="{ 'tag-outline': product.tag === 'COD SURABAYA' }">{{ product.tag }}</span>
+      </div>
       <img v-if="product.image_url || product.image" :src="product.image_url || product.image" :alt="product.name" class="product-card-image" loading="lazy" />
       <ProductArtwork v-else :type="product.art" />
     </div>

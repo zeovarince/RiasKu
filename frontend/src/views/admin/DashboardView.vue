@@ -18,11 +18,26 @@ const orders = [
 ]
 const stockRows = ref([])
 const loadingRestock = ref(false)
+const bestSellerRows = ref([])
+const bestSellerMeta = ref({})
+const loadingBestSellers = ref(false)
+const bestSellerError = ref('')
 
 function restockTone(status) {
   if (status === 'Stok Habis') return 'rose'
   if (status === 'Stok Menipis') return 'gold'
   return 'green'
+}
+
+function rankTone(rank) {
+  if (rank === 1) return 'cream'
+  if (rank === 2) return 'lavender'
+  if (rank === 3) return 'gold'
+  return 'neutral'
+}
+
+function formatScore(score) {
+  return Number(score || 0).toFixed(1)
 }
 
 async function loadRestock() {
@@ -37,7 +52,25 @@ async function loadRestock() {
   }
 }
 
-onMounted(loadRestock)
+async function loadBestSellers() {
+  loadingBestSellers.value = true
+  bestSellerError.value = ''
+  try {
+    const res = await adminService.getBestSellers({ limit: 5 })
+    bestSellerRows.value = res.data.data || []
+    bestSellerMeta.value = res.data.meta || {}
+  } catch (err) {
+    bestSellerError.value = err.response?.data?.message || 'Gagal memuat produk best seller.'
+    console.error('Gagal memuat produk best seller:', err)
+  } finally {
+    loadingBestSellers.value = false
+  }
+}
+
+onMounted(() => {
+  loadRestock()
+  loadBestSellers()
+})
 </script>
 <template>
   <section class="admin-page">
@@ -101,5 +134,75 @@ onMounted(loadRestock)
         <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>ID Pesanan</th><th>Pelanggan</th><th>Item</th><th>Total</th><th>Metode bayar</th><th>Status</th><th>Aksi</th></tr></thead><tbody><tr v-for="order in orders" :key="order[0]"><td><strong class="admin-code">{{ order[0] }}</strong></td><td>{{ order[1] }}</td><td>{{ order[2] }}</td><td><strong>{{ order[3] }}</strong></td><td>{{ order[4] }}</td><td><AdminBadge :tone="order[6]">{{ order[5] }}</AdminBadge></td><td><RouterLink :to="`/admin/orders/${order[0]}`" class="admin-mini-link">Detail</RouterLink></td></tr></tbody></table></div>
       </article>
     </div>
+
+    <article class="admin-panel admin-bestseller-panel">
+      <div class="admin-panel-heading">
+        <div>
+          <h2>Produk Best Seller</h2>
+          <p>Peringkat utama dari frekuensi pesanan {{ bestSellerMeta.window_days || 90 }} hari terakhir, dengan unit terjual dan rating sebagai penilaian tambahan.</p>
+        </div>
+        <RouterLink to="/admin/products" class="admin-text-link">Kelola produk</RouterLink>
+      </div>
+      <div v-if="bestSellerError" class="admin-bestseller-error">
+        <AdminIcon name="alert-triangle" :size="18" />
+        <span>{{ bestSellerError }}</span>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Peringkat</th>
+              <th>Produk &amp; SKU</th>
+              <th>Pesanan</th>
+              <th>Total Terjual</th>
+              <th>Rating</th>
+              <th>Skor</th>
+              <th>Stok</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loadingBestSellers"><td colspan="8" class="admin-empty">Memuat produk best seller...</td></tr>
+            <tr v-else-if="!bestSellerRows.length"><td colspan="8" class="admin-empty">Belum ada penjualan lunas dalam {{ bestSellerMeta.window_days || 90 }} hari terakhir.</td></tr>
+            <tr v-for="item in bestSellerRows" :key="item.product_id">
+              <td><AdminBadge :tone="rankTone(item.rank)">#{{ item.rank }}</AdminBadge></td>
+              <td><strong>{{ item.name }}</strong><small>{{ item.brand }} &bull; {{ item.sku || 'Tanpa SKU' }}</small></td>
+              <td>{{ item.orders_count }} pesanan</td>
+              <td><strong>{{ item.units_sold }} pcs</strong></td>
+              <td>{{ item.rating || '-' }} <small>{{ item.review_count }} ulasan</small></td>
+              <td><strong>{{ formatScore(item.best_seller_score) }}</strong> <small>/ 100</small></td>
+              <td>
+                {{ item.total_stock }} pcs <small>min. {{ item.min_stock }} pcs</small>
+                <AdminBadge :tone="restockTone(item.restock_status)">{{ item.restock_status }}</AdminBadge>
+              </td>
+              <td>
+                <RouterLink
+                  v-if="item.needs_restock"
+                  :to="{ path: '/admin/inventory/incoming', query: { product_id: item.product_id } }"
+                  class="admin-mini-link"
+                >Restock</RouterLink>
+                <RouterLink v-else :to="`/admin/products/${item.product_id}/edit`" class="admin-mini-link">Detail</RouterLink>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
   </section>
 </template>
+
+<style scoped>
+.admin-bestseller-panel { margin-top: 14px; }
+.admin-bestseller-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f8d7da;
+  border-radius: 8px;
+  color: #c53030;
+  background: #fdf1f2;
+  font-size: 10px;
+}
+</style>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\AdminAuthController;
+use App\Http\Controllers\Api\Admin\BestSellerController;
 use App\Http\Controllers\Api\Admin\KategoriController;
 use App\Http\Controllers\Api\Admin\MonthlyReportController;
 use App\Http\Controllers\Api\Admin\OrderManagementController;
@@ -35,6 +36,11 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     // Produk
     Route::get('/produk', [ProdukController::class, 'index']);
     Route::post('/produk', [ProdukController::class, 'store']);
+
+    // Best Seller (PPL-24) — harus berada sebelum route detail /produk/{produk}
+    Route::get('/produk/best-sellers', [BestSellerController::class, 'index']);
+    Route::get('/products/best-sellers', [BestSellerController::class, 'index']);
+
     Route::get('/produk/{produk}', [ProdukController::class, 'show']);
     Route::put('/produk/{produk}', [ProdukController::class, 'update']);
     Route::patch('/produk/{produk}/status', [ProdukController::class, 'updateStatus']);

@@ -33,6 +33,10 @@ class Produk extends Model
         'description',
         'is_active',
         'min_stock',
+        'best_seller_score',
+        'best_seller_units_sold',
+        'best_seller_orders_count',
+        'best_seller_last_calculated_at',
     ];
 
     protected $casts = [
@@ -45,6 +49,10 @@ class Produk extends Model
         'preorder_estimate_days' => 'integer',
         'is_active' => 'boolean',
         'min_stock' => 'integer',
+        'best_seller_score' => 'float',
+        'best_seller_units_sold' => 'integer',
+        'best_seller_orders_count' => 'integer',
+        'best_seller_last_calculated_at' => 'datetime',
     ];
 
     protected $appends = [
@@ -61,6 +69,8 @@ class Produk extends Model
         'review_count',
         'price',
         'variants',
+        'is_best_seller',
+        'best_seller_rank',
     ];
 
     public function kategori(): BelongsTo
@@ -124,6 +134,27 @@ class Produk extends Model
             '(SELECT COALESCE(SUM(v.stock), 0) FROM '.$varianTable.' AS v '.
             'WHERE v.produk_id = '.$produkTable.'.id AND v.is_active = 1) <= '.$produkTable.'.min_stock'
         );
+    }
+
+    public function scopeBestSeller(Builder $query): Builder
+    {
+        return $query->where('best_seller_score', '>', 0);
+    }
+
+    public function getIsBestSellerAttribute(): bool
+    {
+        return (float) ($this->attributes['best_seller_score'] ?? 0) > 0;
+    }
+
+    public function getBestSellerRankAttribute(): ?int
+    {
+        if (! array_key_exists('best_seller_rank', $this->attributes)) {
+            return null;
+        }
+
+        return $this->attributes['best_seller_rank'] === null
+            ? null
+            : (int) $this->attributes['best_seller_rank'];
     }
 
     public function getNeedsRestockAttribute(): bool
@@ -280,9 +311,7 @@ class Produk extends Model
     public function getTagAttribute(): ?string
     {
         $sku = (string) $this->sku;
-        if (str_contains($sku, 'CUSH')) {
-            return 'BEST SELLER #1';
-        }
+
         if (str_contains($sku, 'BRV')) {
             return 'COD SURABAYA';
         }

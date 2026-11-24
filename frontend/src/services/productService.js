@@ -70,6 +70,12 @@ export function normalizeProduct(product) {
 
   const primaryPhoto = product.primary_foto?.file_path || product.primaryFoto?.file_path || product.fotos?.[0]?.file_path
   const imageUrl = product.image_url ?? product.image ?? (primaryPhoto ? `/storage/${primaryPhoto}` : null)
+  const bestSellerScore = Number(product.best_seller_score ?? product.bestSellerScore ?? 0)
+  const bestSellerUnitsSold = Number(product.best_seller_units_sold ?? product.bestSellerUnitsSold ?? 0)
+  const bestSellerOrdersCount = Number(product.best_seller_orders_count ?? product.bestSellerOrdersCount ?? 0)
+  const rawBestSellerRank = product.best_seller_rank ?? product.bestSellerRank
+  const bestSellerRank = rawBestSellerRank == null ? null : Number(rawBestSellerRank)
+  const isBestSeller = Boolean(product.is_best_seller ?? product.isBestSeller ?? bestSellerScore > 0)
 
   return {
     ...product,
@@ -92,6 +98,11 @@ export function normalizeProduct(product) {
     preorder_estimate_days: preorderEstimateDays,
     variants,
     art: product.art ?? product.art_type ?? 'cushion',
+    bestSellerScore,
+    bestSellerUnitsSold,
+    bestSellerOrdersCount,
+    bestSellerRank,
+    isBestSeller,
   }
 }
 
@@ -108,6 +119,7 @@ export async function getProducts(params = {}) {
     const query = String(params.q ?? params.search ?? '').trim().toLowerCase()
     const category = String(params.category ?? '').trim().toLowerCase()
     const sort = String(params.sort ?? 'recommended')
+    const isBestSellerSort = ['best_seller', 'best-seller', 'terlaris'].includes(sort)
 
     if (query) {
       result = result.filter((product) =>
@@ -128,11 +140,66 @@ export async function getProducts(params = {}) {
     if (sort === 'price-desc') result.sort((a, b) => b.price - a.price)
     if (sort === 'rating') result.sort((a, b) => Number(b.rating) - Number(a.rating))
     if (sort === 'name') result.sort((a, b) => a.name.localeCompare(b.name, 'id'))
+    if (isBestSellerSort) {
+      result.sort((a, b) =>
+        Number(b.best_seller_orders_count || 0) - Number(a.best_seller_orders_count || 0) ||
+        Number(b.best_seller_units_sold || 0) - Number(a.best_seller_units_sold || 0),
+      )
+    }
 
-    return result.map(normalizeProduct)
+    let bestSellerRank = 0
+
+    return result.map((product) => {
+      const hasPurchases = Number(product.best_seller_orders_count || 0) > 0
+      const rank = isBestSellerSort && hasPurchases ? ++bestSellerRank : null
+
+      return normalizeProduct({
+        ...product,
+        ...(rank ? { best_seller_rank: rank } : {}),
+      })
+    })
   }
 
   const response = await api.get('/products', { params })
+  return normalizeCollection(response.data?.data ?? response.data).map(normalizeProduct)
+}
+
+export async function getBestSellers(params = {}) {
+  const limit = Math.max(1, Math.min(50, Number(params.limit ?? params.per_page ?? 8) || 8))
+
+  if (useMockData) {
+    const mockProducts = products.filter((product) => product.type !== 'service')
+    const maxOrders = Math.max(0, ...mockProducts.map((product) => Number(product.best_seller_orders_count || 0)))
+    const maxUnits = Math.max(0, ...mockProducts.map((product) => Number(product.best_seller_units_sold || 0)))
+
+    return mockProducts
+      .map((product) => {
+        const orders = Number(product.best_seller_orders_count || 0)
+        const units = Number(product.best_seller_units_sold || 0)
+        const rating = Number(product.rating || 0)
+        const score = maxOrders > 0 && orders > 0
+          ? 100 * (
+            0.6 * orders / maxOrders +
+            0.25 * (maxUnits > 0 ? units / maxUnits : 0) +
+            0.15 * Math.min(1, rating / 5)
+          )
+          : 0
+
+        return { ...product, best_seller_score: Number(score.toFixed(4)) }
+      })
+      .sort((a, b) =>
+        Number(b.best_seller_orders_count || 0) - Number(a.best_seller_orders_count || 0) ||
+        Number(b.best_seller_score || 0) - Number(a.best_seller_score || 0) ||
+        Number(b.best_seller_units_sold || 0) - Number(a.best_seller_units_sold || 0),
+      )
+      .slice(0, limit)
+      .map((product, index) => normalizeProduct({
+        ...product,
+        best_seller_rank: index + 1,
+      }))
+  }
+
+  const response = await api.get('/products/best-sellers', { params: { ...params, limit } })
   return normalizeCollection(response.data?.data ?? response.data).map(normalizeProduct)
 }
 

@@ -21,6 +21,7 @@ Dokumen ini merangkum endpoint API pelanggan yang dipakai frontend RiasKu.
 | POST | `/api/auth/logout` | Pelanggan | Menghapus token aktif |
 | GET | `/api/categories` | Publik | Daftar kategori |
 | GET | `/api/products` | Publik | Katalog dan pencarian produk |
+| GET | `/api/products/best-sellers` | Publik | Produk best seller hasil scoring PPL-24 |
 | GET | `/api/products/{id}` | Publik | Detail produk |
 | GET | `/api/products/{product}/reviews` | Publik | Daftar ulasan produk yang tampil |
 | POST | `/api/products/{product}/reviews` | Pelanggan | Menambah atau memperbarui ulasan sendiri |

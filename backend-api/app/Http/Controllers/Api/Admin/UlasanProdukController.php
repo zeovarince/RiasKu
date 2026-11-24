@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\UlasanProduk;
+use App\Services\BestSellerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class UlasanProdukController extends Controller
 {
+    public function __construct(protected BestSellerService $bestSellers) {}
+
     public function index(Request $request): JsonResponse
     {
         $query = UlasanProduk::query()
@@ -54,6 +57,8 @@ class UlasanProdukController extends Controller
         $review->update([
             'status' => $validated['status'],
         ]);
+
+        $this->bestSellers->refreshForProduct((int) $review->produk_id);
 
         return response()->json([
             'message' => 'Status ulasan berhasil diperbarui.',

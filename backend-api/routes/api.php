@@ -30,6 +30,10 @@ Route::get('/kategori', [KategoriController::class, 'index']);
 Route::get('/products', [ProdukController::class, 'index']);
 Route::get('/produk', [ProdukController::class, 'index']);
 
+// Best Seller (PPL-24) — harus berada sebelum route detail /products/{id}
+Route::get('/products/best-sellers', [ProdukController::class, 'bestSellers']);
+Route::get('/produk/best-sellers', [ProdukController::class, 'bestSellers']);
+
 Route::get('/products/{id}', [ProdukController::class, 'show']);
 Route::get('/produk/{id}', [ProdukController::class, 'show']);
 
