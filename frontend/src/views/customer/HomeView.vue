@@ -117,7 +117,7 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
         <div>
           <span class="section-kicker">PILIHAN PELANGGAN</span>
           <h2>Paling Diminati <span>(Best Seller)</span></h2>
-          <p>Produk kosmetik dan layanan riasan dengan penilaian terbaik dari pelanggan RiasKu.</p>
+          <p>Produk yang paling sering dibeli dalam 90 hari terakhir, dengan jumlah unit dan rating sebagai penilaian tambahan.</p>
         </div>
         <div class="filter-pills" aria-label="Filter kategori produk">
           <button v-for="filter in filters" :key="filter" type="button" :class="['filter-pill', { active: activeFilter === filter }]" @click="activeFilter = filter">{{ filter }}</button>

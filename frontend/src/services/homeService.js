@@ -1,9 +1,9 @@
-import { getCategories, getProducts } from './productService'
+import { getCategories, getBestSellers } from './productService'
 
 export async function getHomeData() {
   const [categoryRows, bestSellerRows] = await Promise.all([
     getCategories(),
-    getProducts({ featured: 1, per_page: 4 }),
+    getBestSellers({ limit: 4 }),
   ])
 
   return {

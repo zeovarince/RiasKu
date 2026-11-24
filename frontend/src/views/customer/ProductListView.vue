@@ -48,6 +48,14 @@ const filteredProducts = computed(() => {
   if (sortBy.value === 'price-desc') result.sort((a, b) => Number(b.price) - Number(a.price))
   if (sortBy.value === 'rating') result.sort((a, b) => Number(b.rating) - Number(a.rating))
   if (sortBy.value === 'name') result.sort((a, b) => a.name.localeCompare(b.name, 'id'))
+  if (sortBy.value === 'best_seller' || sortBy.value === 'best-seller' || sortBy.value === 'terlaris') {
+    result.sort((a, b) =>
+      Number(b.bestSellerOrdersCount || 0) - Number(a.bestSellerOrdersCount || 0) ||
+      Number(b.bestSellerScore || 0) - Number(a.bestSellerScore || 0) ||
+      Number(b.bestSellerUnitsSold || 0) - Number(a.bestSellerUnitsSold || 0) ||
+      Number(b.reviewCount || 0) - Number(a.reviewCount || 0),
+    )
+  }
   return result
 })
 
@@ -130,6 +138,7 @@ onMounted(loadCatalog)
           <option value="price-asc">Harga terendah</option>
           <option value="price-desc">Harga tertinggi</option>
           <option value="rating">Rating tertinggi</option>
+          <option value="best_seller">Terlaris (Best Seller)</option>
         </select>
       </label>
       <button class="button button-primary catalog-search-submit" type="submit">Cari</button>

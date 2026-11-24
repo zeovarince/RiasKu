@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Produk;
+use App\Services\BestSellerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ProdukController extends Controller
 {
+    public function __construct(protected BestSellerService $bestSellers) {}
+
     public function index(Request $request): JsonResponse
     {
         $query = Produk::query()
@@ -43,6 +46,10 @@ class ProdukController extends Controller
             $query->filterStockLabel((string) $stockFilter);
         }
 
+        if ($request->boolean('best_seller') || $request->boolean('is_best_seller')) {
+            $query->bestSeller();
+        }
+
         $sort = (string) $request->query('sort', 'recommended');
         switch ($sort) {
             case 'price-asc':
@@ -57,6 +64,14 @@ class ProdukController extends Controller
             case 'rating':
                 $query->orderByRaw('reviews_avg_rating IS NULL ASC')
                     ->orderByDesc('reviews_avg_rating');
+                break;
+            case 'best_seller':
+            case 'best-seller':
+            case 'terlaris':
+                $query->orderByDesc('best_seller_orders_count')
+                    ->orderByDesc('best_seller_score')
+                    ->orderByDesc('best_seller_units_sold')
+                    ->orderBy('id');
                 break;
             case 'recommended':
             default:
@@ -89,6 +104,20 @@ class ProdukController extends Controller
         return response()->json([
             'message' => 'Daftar produk berhasil dimuat.',
             'data' => $products,
+        ]);
+    }
+
+    public function bestSellers(Request $request): JsonResponse
+    {
+        $limit = max(1, min(50, (int) $request->query('limit', $request->query('per_page', 8))));
+        $products = $this->bestSellers->topSellers($limit);
+
+        $products->each(fn (Produk $item) => $item->makeHidden(['base_price', 'price_warning']));
+
+        return response()->json([
+            'message' => 'Daftar produk best seller berhasil dimuat.',
+            'data' => $products,
+            'meta' => array_merge(['limit' => $limit], $this->bestSellers->metadata()),
         ]);
     }
 

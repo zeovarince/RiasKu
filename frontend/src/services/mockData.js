@@ -10,23 +10,23 @@ export const categories = [
 
 export const products = [
   {
-    id: 1, code: 'KODE: RSK-CUSH-01', sku: 'RSK-CUSH-01', name: 'Velvet Matte Cushion SPF 35', tag: 'BEST SELLER #1',
+    id: 1, code: 'KODE: RSK-CUSH-01', sku: 'RSK-CUSH-01', name: 'Velvet Matte Cushion SPF 35',
     category: 'complexion', categoryLabel: 'Complexion', art: 'cushion', price: 185000, stock: 20,
     variants: [{ id: 'cushion-natural', name: 'Natural 01', price: 185000, stock: 8 }, { id: 'cushion-warm', name: 'Warm 02', price: 185000, stock: 12 }],
-    priceLabel: 'Rp 185.000', rating: '4.9', reviewCount: 184,
+    priceLabel: 'Rp 185.000', rating: '4.9', reviewCount: 184, best_seller_orders_count: 72, best_seller_units_sold: 138,
     description: 'Cushion dengan hasil velvet matte untuk tampilan rias natural sehari-hari.',
   },
   {
     id: 2, code: 'KODE: RSK-LIP-04', sku: 'RSK-LIP-04', name: 'Glaze Tinted Lip Oil Butter', tag: 'READY STOCK',
     category: 'lip-care', categoryLabel: 'Lip Care', art: 'lip', price: 95000, stock: 18,
     variants: [{ id: 'lip-rose', name: 'Rose Butter', price: 95000, stock: 10 }, { id: 'lip-peach', name: 'Peach Glow', price: 95000, stock: 8 }],
-    priceLabel: 'Rp 95.000', rating: '4.8', reviewCount: 92,
+    priceLabel: 'Rp 95.000', rating: '4.8', reviewCount: 92, best_seller_orders_count: 96, best_seller_units_sold: 121,
     description: 'Lip oil berwarna dengan sentuhan lembap dan kilau natural.',
   },
   {
     id: 3, code: 'KODE: RSK-POWD-02', sku: 'RSK-POWD-02', name: 'Translucent HD Setting Powder', tag: 'SISA 3 PCS',
     category: 'complexion', categoryLabel: 'Complexion', art: 'powder', price: 135000, stock: 3,
-    priceLabel: 'Rp 135.000', rating: '4.9', reviewCount: 64,
+    priceLabel: 'Rp 135.000', rating: '4.9', reviewCount: 64, best_seller_orders_count: 41, best_seller_units_sold: 58,
     description: 'Bedak tabur translucent untuk membantu mengunci hasil makeup.',
   },
   {

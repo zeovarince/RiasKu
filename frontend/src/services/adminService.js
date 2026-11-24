@@ -39,6 +39,8 @@ export const adminService = {
   createIncomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
   getRestockAlerts: (params = {}) => dashboardApi.get('/inventory/restock', { params }),
   incomingStock: (payload) => dashboardApi.post('/inventory/incoming', payload),
+  // Best seller scoring (PPL-24)
+  getBestSellers: (params = {}) => dashboardApi.get('/produk/best-sellers', { params }),
   directSales: (params = {}) => dashboardApi.get('/sales/direct', { params }),
   monthlyReport: (params = {}) => dashboardApi.get('/reports/monthly', { params }),
   monthlyTransactions: (params = {}) => dashboardApi.get('/reports/monthly/transactions', { params }),

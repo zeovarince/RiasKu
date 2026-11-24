@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class OrderStatusService
 {
+    public function __construct(protected BestSellerService $bestSellers) {}
+
     /**
      * Eager load relasi lengkap Produk agar accessor/appends pada Produk tidak memicu N+1 query.
      *
@@ -106,14 +108,13 @@ class OrderStatusService
     {
         $target = strtolower(trim($targetStatus));
 
-        return DB::transaction(function () use ($order, $target, $context): Pesanan {
+        $updated = DB::transaction(function () use ($order, $target, $context): Pesanan {
             /** @var Pesanan $locked */
             $locked = Pesanan::query()
                 ->whereKey($order->id)
                 ->with('items.varian')
                 ->lockForUpdate()
                 ->firstOrFail();
-
             $currentStatus = $locked->resolvedOrderStatus();
             $trackingNumber = isset($context['tracking_number'])
                 ? trim((string) $context['tracking_number'])
@@ -223,6 +224,10 @@ class OrderStatusService
 
             return $locked->fresh(self::orderRelations(true));
         });
+
+        $this->bestSellers->refreshForOrder($updated);
+
+        return $updated;
     }
 
     /**
@@ -232,7 +237,7 @@ class OrderStatusService
      */
     public function markCodPaid(Pesanan $order, array $context = []): Pesanan
     {
-        return DB::transaction(function () use ($order, $context): Pesanan {
+        $updated = DB::transaction(function () use ($order, $context): Pesanan {
             /** @var Pesanan $locked */
             $locked = Pesanan::query()
                 ->whereKey($order->id)
@@ -335,6 +340,10 @@ class OrderStatusService
 
             return $locked->fresh(self::orderRelations(true));
         });
+
+        $this->bestSellers->refreshForOrder($updated);
+
+        return $updated;
     }
 
     public function restoreStockIfNeeded(Pesanan $order): void
