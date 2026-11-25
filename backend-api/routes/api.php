@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\ShippingController;
+use App\Http\Controllers\Api\StoreSettingsController;
 use App\Http\Controllers\Api\UlasanProdukController;
 use App\Http\Middleware\EnsurePelanggan;
 use App\Services\ShippingCostService;
@@ -24,6 +25,8 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function (): void {
 });
 
 // Public Catalog (Kategori & Produk)
+Route::get('/store-settings', [StoreSettingsController::class, 'show']);
+
 Route::get('/categories', [KategoriController::class, 'index']);
 Route::get('/kategori', [KategoriController::class, 'index']);
 

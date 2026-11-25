@@ -3,12 +3,10 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthPage from '@/components/AuthPage.vue'
 import GoogleSignInButton from '@/components/GoogleSignInButton.vue'
-import { loginWithGoogle, register } from '@/services/authService'
-import { useAuthStore } from '@/stores/auth'
+import { register } from '@/services/authService'
 
 const router = useRouter()
 const route = useRoute()
-const auth = useAuthStore()
 const form = ref({ username: '', email: '', password: '', password_confirmation: '' })
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -39,19 +37,6 @@ async function submit() {
   }
 }
 
-async function submitGoogle(credential) {
-  isLoading.value = true
-  errorMessage.value = ''
-  try {
-    auth.setSession(await loginWithGoogle(credential))
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    await router.replace(redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
-  } catch (error) {
-    errorMessage.value = error.response?.data?.message || error.message || 'Login Google gagal.'
-  } finally {
-    isLoading.value = false
-  }
-}
 </script>
 
 <template>
@@ -129,7 +114,7 @@ async function submitGoogle(credential) {
 
     <div class="social-auth">
       <div class="social-divider"><span>atau daftar lewat</span></div>
-      <GoogleSignInButton mode="signup" :disabled="isLoading" @credential="submitGoogle" />
+      <GoogleSignInButton mode="signup" :disabled="isLoading" />
     </div>
     <p class="switch">Sudah punya akun? <RouterLink class="link-btn" :to="{ name: 'login', query: route.query }">Masuk</RouterLink></p>
   </AuthPage>

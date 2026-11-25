@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Admin\ProdukFotoController;
 use App\Http\Controllers\Api\Admin\ProdukVarianController;
 use App\Http\Controllers\Api\Admin\StokMasukController;
 use App\Http\Controllers\Api\Admin\UlasanProdukController as AdminUlasanProdukController;
+use App\Http\Controllers\Api\StoreSettingsController;
 use App\Http\Middleware\EnsureAdmin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,10 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     });
 
     Route::get('/user', fn (Request $request) => $request->user());
+
+    // Pengaturan toko dan WhatsApp (PPL-27)
+    Route::get('/settings/store', [StoreSettingsController::class, 'adminShow']);
+    Route::put('/settings/store', [StoreSettingsController::class, 'update']);
 
     // Kategori
     Route::get('/kategori', [KategoriController::class, 'index']);

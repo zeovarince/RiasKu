@@ -16,6 +16,10 @@ export async function loginWithGoogle(credential) {
   return unwrap(await api.post('/auth/google', { credential }))
 }
 
+export async function exchangeGoogleCode(code) {
+  return unwrap(await api.post('/auth/google/exchange', { code }))
+}
+
 export async function logout() {
   const response = await api.post('/auth/logout')
   return response.data
