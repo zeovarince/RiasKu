@@ -199,6 +199,11 @@
 .admin-upload-box small { color: #ab989e; font-size: 8px; }
 .admin-submit { width: 100%; }
 .admin-inline-success { margin: 9px 0 0; padding: 9px 10px; border: 1px solid #d7eadf; border-radius: 7px; color: #377b5b; background: #f1faf4; font-size: 8px; line-height: 1.5; }
+.admin-inline-error { margin: 9px 0; padding: 9px 10px; border: 1px solid #f0cdd2; border-radius: 7px; color: #a13d4e; background: #fff5f6; font-size: 9px; line-height: 1.5; }
+.admin-field-error { color: #a13d4e !important; font-size: 8px !important; font-weight: 500; line-height: 1.45; }
+.admin-message-preview { margin: 0 0 12px; padding: 11px 12px; border: 1px solid #efdee2; border-radius: 8px; color: #76545f; background: #fffafb; font-size: 9px; }
+.admin-message-preview p { margin: 7px 0 0; white-space: pre-wrap; line-height: 1.55; }
+.admin-panel-hint { color: #9b858c; font-size: 9px; line-height: 1.5; }
 .admin-add-inline { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 15px; }
 .admin-add-inline .admin-field { flex: 1; margin-bottom: 0; }
 .admin-category-name { display: flex; align-items: center; gap: 9px; }

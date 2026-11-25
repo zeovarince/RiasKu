@@ -10,11 +10,14 @@ import { formatRupiah } from '@/utils/currency'
 import ReviewList from '@/components/ReviewList.vue'
 import ReviewForm from '@/components/ReviewForm.vue'
 import { getProductReviews, createProductReview } from '@/services/reviewService'
+import { useStoreSettingsStore } from '@/stores/storeSettings'
+import { buildWhatsAppUrl } from '@/utils/whatsapp'
 
 const route = useRoute()
 const cart = useCartStore()
 const ui = useUiStore()
 const auth = useAuthStore()
+const storeSettings = useStoreSettingsStore()
 const product = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -61,6 +64,9 @@ const stockBadgeClass = computed(() => {
   if (isSelectedVariantPreorder.value) return 'stock-preorder'
   return 'stock-empty'
 })
+const productWhatsAppUrl = computed(() => buildWhatsAppUrl(storeSettings.settings, {
+  productName: product.value?.name || '',
+}))
 
 watch(selectedVariantId, () => {
   quantity.value = 1
@@ -206,6 +212,9 @@ onBeforeUnmount(() => window.removeEventListener('riasku:review-created', handle
           <span>✓ Pengiriman seluruh Indonesia</span>
         </div>
         <div class="detail-actions">
+          <a v-if="storeSettings.hasActiveWhatsApp && productWhatsAppUrl" class="review-link" :href="productWhatsAppUrl" target="_blank" rel="noopener noreferrer">
+            Tanya Produk via WhatsApp
+          </a>
           <button class="review-link" type="button" @click="ui.openModal('review', { product })">☆ Tulis ulasan produk ini</button>
           <button
             class="review-link"

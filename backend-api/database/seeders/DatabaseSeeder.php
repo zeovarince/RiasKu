@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             KatalogSeeder::class,
             UlasanProdukSeeder::class,
             ShippingSeeder::class,
+            StoreSettingsSeeder::class,
         ]);
     }
 }

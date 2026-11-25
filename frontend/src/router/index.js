@@ -19,6 +19,7 @@ const routes = [
     path: '/auth',
     component: () => import('@/layouts/AuthLayout.vue'),
     children: [
+      { path: 'google/callback', name: 'google-callback', component: () => import('@/views/auth/GoogleCallbackView.vue') },
       { path: 'login', name: 'login', component: () => import('@/views/auth/LoginView.vue') },
       { path: 'register', name: 'register', component: () => import('@/views/auth/RegisterView.vue') },
     ],

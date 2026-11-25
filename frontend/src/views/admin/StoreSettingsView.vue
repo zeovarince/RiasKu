@@ -1,22 +1,180 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
-const settings = ref({ name:'RiasKu Official Store',phone:'081234567890',address:'Jl. Raya Surabaya, Jawa Timur',city:'Surabaya',minOrder:0,leadTime:24,cod:true,shipping:true,open:true })
-const saved = ref(false)
+import { adminService } from '@/services/adminService'
+import { useStoreSettingsStore } from '@/stores/storeSettings'
+import { getWhatsAppMessage, normalizeWhatsAppNumber } from '@/utils/whatsapp'
+
+const store = useStoreSettingsStore()
+const settings = reactive({
+  store_name: 'RiasKu',
+  store_tagline: '',
+  store_logo: '',
+  store_address: '',
+  operational_hours: '',
+  whatsapp_number: '',
+  whatsapp_default_message: 'Halo RiasKu, saya ingin bertanya.',
+  is_whatsapp_active: false,
+})
+const loading = ref(true)
+const saving = ref(false)
+const successMessage = ref('')
+const errorMessage = ref('')
+const fieldErrors = ref({})
+
+const normalizedNumber = computed(() => normalizeWhatsAppNumber(settings.whatsapp_number))
+const previewMessage = computed(() => getWhatsAppMessage(settings, {
+  productName: 'Lip Tint Velvet',
+  orderId: 'RSK-2026-001',
+}))
+
+function applySettings(value) {
+  Object.assign(settings, {
+    store_name: value.store_name || 'RiasKu',
+    store_tagline: value.store_tagline || '',
+    store_logo: value.store_logo || '',
+    store_address: value.store_address || '',
+    operational_hours: value.operational_hours || '',
+    whatsapp_number: value.whatsapp_number || '',
+    whatsapp_default_message: value.whatsapp_default_message || 'Halo RiasKu, saya ingin bertanya.',
+    is_whatsapp_active: Boolean(value.is_whatsapp_active),
+  })
+}
+
+async function loadSettings() {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await adminService.storeSettings()
+    const data = response.data?.data || response.data
+    applySettings(data)
+  } catch {
+    errorMessage.value = 'Pengaturan toko gagal dimuat. Muat ulang halaman atau coba lagi.'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function saveSettings() {
+  successMessage.value = ''
+  errorMessage.value = ''
+  fieldErrors.value = {}
+
+  if (settings.is_whatsapp_active && !normalizedNumber.value) {
+    fieldErrors.value = { whatsapp_number: ['Masukkan nomor WhatsApp Indonesia yang valid sebelum mengaktifkan tombol.'] }
+    errorMessage.value = 'Periksa kembali nomor WhatsApp.'
+    return
+  }
+
+  saving.value = true
+  try {
+    const response = await adminService.updateStoreSettings({ ...settings })
+    const data = response.data?.data || response.data
+    applySettings(data)
+    store.setSettings(data)
+    successMessage.value = 'Pengaturan toko berhasil disimpan.'
+  } catch (error) {
+    fieldErrors.value = error.response?.data?.errors || {}
+    errorMessage.value = error.response?.data?.message || 'Pengaturan toko gagal disimpan. Periksa data lalu coba lagi.'
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(loadSettings)
 </script>
+
 <template>
   <section class="admin-page">
-    <AdminPageHeader eyebrow="ADMIN / PENGATURAN / TOKO" title="Pengaturan Toko" description="Kelola profil toko, kontak, wilayah layanan, dan operasional.">
-      <template #actions><button class="admin-btn admin-btn-primary" @click="saved=true"><AdminIcon name="check" :size="15"/> Simpan Pengaturan</button></template>
+    <AdminPageHeader
+      eyebrow="ADMIN / PENGATURAN / TOKO"
+      title="Pengaturan Toko"
+      description="Kelola identitas toko dan tombol WhatsApp yang dilihat pelanggan."
+    >
+      <template #actions>
+        <button class="admin-btn admin-btn-primary" type="submit" form="store-settings-form" :disabled="saving || loading">
+          <AdminIcon name="check" :size="15" />
+          {{ saving ? 'Menyimpan...' : 'Simpan Pengaturan' }}
+        </button>
+      </template>
     </AdminPageHeader>
-    <form class="admin-settings-grid" @submit.prevent="saved=true">
+
+    <p v-if="successMessage" class="admin-inline-success" role="status">{{ successMessage }}</p>
+    <p v-if="errorMessage" class="admin-inline-error" role="alert">{{ errorMessage }}</p>
+    <p v-if="loading" class="admin-panel admin-panel-hint" role="status">Memuat pengaturan toko...</p>
+
+    <form v-else id="store-settings-form" class="admin-settings-grid" @submit.prevent="saveSettings">
       <div class="admin-settings-main">
-        <article class="admin-panel admin-form-panel"><div class="admin-panel-heading"><div><h2>Profil Toko</h2><p>Informasi identitas toko yang ditampilkan kepada pelanggan.</p></div></div><label class="admin-field">URL / Nama Toko<input value="riasku.official"/></label><label class="admin-field">Nama Toko <em>*</em><input v-model="settings.name" required/></label><label class="admin-field">Nomor WhatsApp Admin <em>*</em><input v-model="settings.phone" required/></label><label class="admin-field">Alamat Asal Pengiriman<textarea v-model="settings.address" rows="3"></textarea></label><label class="admin-field">Kota Asal<select v-model="settings.city"><option>Surabaya</option><option>Bangkalan</option><option>Sidoarjo</option><option>Gresik</option></select></label></article>
-        <article class="admin-panel admin-form-panel"><div class="admin-panel-heading"><div><h2>Wilayah Pengiriman</h2><p>Atur jangkauan pengiriman dan layanan pengantaran.</p></div></div><label class="admin-field">Ongkir Dalam Kota Surabaya<textarea rows="2" placeholder="Contoh: Gratis ongkir untuk area Surabaya Kota"></textarea></label><label class="admin-field">Wilayah Layanan<textarea rows="3" placeholder="Surabaya, Sidoarjo, Gresik, dan sekitarnya"></textarea></label><div class="admin-settings-actions"><span>Aktifkan layanan pengiriman toko</span><input v-model="settings.shipping" type="checkbox" class="admin-toggle"/></div></article>
-        <article class="admin-panel admin-form-panel"><div class="admin-panel-heading"><div><h2>Aturan Operasional</h2><p>Ketentuan minimum pesanan dan batas waktu pembayaran.</p></div></div><div class="admin-field-grid"><label class="admin-field">Batas Stok Minimum (pcs) <em>*</em><input type="number" min="0" value="5"/></label><label class="admin-field">Batas Waktu Bayar (Jam) <em>*</em><input type="number" min="1" v-model="settings.leadTime"/></label></div><label class="admin-switch-row"><span><strong>Terima COD Surabaya</strong><small>Pelanggan dapat memilih pembayaran tunai saat pesanan diterima.</small></span><input v-model="settings.cod" type="checkbox" class="admin-toggle"/></label><label class="admin-switch-row"><span><strong>Toko sedang beroperasi</strong><small>Nonaktifkan untuk menyembunyikan tombol pembelian sementara.</small></span><input v-model="settings.open" type="checkbox" class="admin-toggle"/></label></article>
+        <article class="admin-panel admin-form-panel">
+          <div class="admin-panel-heading">
+            <div><h2>Profil Toko</h2><p>Informasi toko ditampilkan di area publik RiasKu.</p></div>
+          </div>
+          <label class="admin-field">Nama Toko <em>*</em>
+            <input v-model.trim="settings.store_name" required maxlength="120" autocomplete="organization" />
+            <small v-if="fieldErrors.store_name" class="admin-field-error">{{ fieldErrors.store_name[0] }}</small>
+          </label>
+          <label class="admin-field">Deskripsi Singkat
+            <input v-model.trim="settings.store_tagline" maxlength="255" placeholder="Kosmetik pilihan untuk setiap hari" />
+            <small v-if="fieldErrors.store_tagline" class="admin-field-error">{{ fieldErrors.store_tagline[0] }}</small>
+          </label>
+          <label class="admin-field">URL Logo Toko
+            <input v-model.trim="settings.store_logo" type="url" maxlength="2048" placeholder="https://..." />
+            <small v-if="fieldErrors.store_logo" class="admin-field-error">{{ fieldErrors.store_logo[0] }}</small>
+          </label>
+          <label class="admin-field">Alamat Toko / Pengiriman
+            <textarea v-model.trim="settings.store_address" rows="3" maxlength="2000" placeholder="Alamat yang ingin ditampilkan kepada pelanggan" />
+            <small v-if="fieldErrors.store_address" class="admin-field-error">{{ fieldErrors.store_address[0] }}</small>
+          </label>
+          <label class="admin-field">Jam Operasional
+            <input v-model.trim="settings.operational_hours" maxlength="500" placeholder="Contoh: Senin–Sabtu, 09.00–17.00 WIB" />
+            <small v-if="fieldErrors.operational_hours" class="admin-field-error">{{ fieldErrors.operational_hours[0] }}</small>
+          </label>
+        </article>
+
+        <article class="admin-panel admin-form-panel">
+          <div class="admin-panel-heading">
+            <div><h2>Kontak WhatsApp</h2><p>Nomor lokal 08... akan disimpan dalam format internasional 628....</p></div>
+          </div>
+          <label class="admin-field">Nomor WhatsApp Admin
+            <input v-model.trim="settings.whatsapp_number" type="tel" maxlength="30" autocomplete="tel" placeholder="081234567890 atau 6281234567890" />
+            <small v-if="fieldErrors.whatsapp_number" class="admin-field-error">{{ fieldErrors.whatsapp_number[0] }}</small>
+            <small v-else-if="normalizedNumber">Nomor tersimpan: {{ normalizedNumber }}</small>
+          </label>
+          <label class="admin-field">Template Pesan Otomatis
+            <textarea v-model.trim="settings.whatsapp_default_message" rows="4" maxlength="500" placeholder="Halo RiasKu, saya ingin bertanya tentang {product_name}." />
+            <small>Gunakan <code>{product_name}</code> atau <code>{order_id}</code> untuk pesan kontekstual.</small>
+            <small v-if="fieldErrors.whatsapp_default_message" class="admin-field-error">{{ fieldErrors.whatsapp_default_message[0] }}</small>
+          </label>
+          <div class="admin-message-preview">
+            <strong>Pratinjau pesan</strong>
+            <p>{{ previewMessage }}</p>
+          </div>
+          <label class="admin-switch-row">
+            <span><strong>Aktifkan tombol WhatsApp</strong><small>Tombol melayang dan kontak WhatsApp tampil jika nomor valid.</small></span>
+            <input v-model="settings.is_whatsapp_active" type="checkbox" class="admin-toggle" />
+          </label>
+          <small v-if="fieldErrors.is_whatsapp_active" class="admin-field-error">{{ fieldErrors.is_whatsapp_active[0] }}</small>
+        </article>
       </div>
-      <aside class="admin-settings-aside"><article class="admin-panel admin-form-panel"><div class="admin-panel-heading"><h2>Logo Toko</h2></div><div class="admin-store-logo-preview"><img src="/images/riasku-mark.png" alt="Logo RiasKu"/></div><p class="admin-panel-hint">Logo resmi RiasKu. File dapat diganti melalui pengelolaan aset.</p><button type="button" class="admin-btn admin-btn-outline admin-btn-small">Ganti Logo</button></article><article class="admin-panel admin-form-panel"><div class="admin-panel-heading"><h2>Status Toko</h2></div><AdminBadge :tone="settings.open?'green':'rose'">{{ settings.open?'Toko aktif':'Toko tutup' }}</AdminBadge><p class="admin-panel-hint">Status toko menentukan apakah pelanggan dapat melakukan pemesanan.</p></article><button class="admin-btn admin-btn-primary admin-submit" type="submit">Simpan Pengaturan</button><p v-if="saved" class="admin-inline-success">Pengaturan berhasil divalidasi pada simulasi frontend.</p></aside>
+
+      <aside class="admin-settings-aside">
+        <article class="admin-panel admin-form-panel">
+          <div class="admin-panel-heading"><h2>Pratinjau Identitas</h2></div>
+          <div class="admin-store-logo-preview">
+            <img v-if="settings.store_logo" :src="settings.store_logo" :alt="`Logo ${settings.store_name}`" />
+            <img v-else src="/images/riasku-mark.png" alt="Logo RiasKu" />
+          </div>
+          <strong>{{ settings.store_name || 'RiasKu' }}</strong>
+          <p v-if="settings.store_tagline" class="admin-panel-hint">{{ settings.store_tagline }}</p>
+          <p v-if="settings.store_address" class="admin-panel-hint">{{ settings.store_address }}</p>
+          <p v-if="settings.operational_hours" class="admin-panel-hint">{{ settings.operational_hours }}</p>
+        </article>
+        <article class="admin-panel admin-form-panel">
+          <div class="admin-panel-heading"><h2>Status Tombol</h2></div>
+          <p>{{ settings.is_whatsapp_active && normalizedNumber ? 'Tombol WhatsApp siap ditampilkan kepada pelanggan.' : 'Tombol WhatsApp disembunyikan sampai diaktifkan dengan nomor valid.' }}</p>
+        </article>
+      </aside>
     </form>
   </section>
 </template>

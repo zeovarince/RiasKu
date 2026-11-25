@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthPage from '@/components/AuthPage.vue'
 import GoogleSignInButton from '@/components/GoogleSignInButton.vue'
-import { login, loginWithGoogle } from '@/services/authService'
+import { login } from '@/services/authService'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 
@@ -54,9 +54,6 @@ function submit() {
   return completeLogin(() => login({ email: email.value, password: password.value }))
 }
 
-function submitGoogle(credential) {
-  return completeLogin(() => loginWithGoogle(credential))
-}
 </script>
 
 <template>
@@ -95,7 +92,7 @@ function submitGoogle(credential) {
 
     <div class="social-auth">
       <div class="social-divider"><span>atau masuk dengan</span></div>
-      <GoogleSignInButton :disabled="isLoading" @credential="submitGoogle" />
+      <GoogleSignInButton :disabled="isLoading" />
     </div>
     <p class="switch">Belum punya akun? <RouterLink class="link-btn" :to="{ name: 'register', query: route.query }">Daftar sekarang</RouterLink></p>
   </AuthPage>
