@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
+use App\Services\BarcodeProductLookupService;
 use App\Support\SqlSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,7 +27,8 @@ class ProdukController extends Controller
             $query->where(function ($q) use ($operator, $pattern): void {
                 $q->where('name', $operator, $pattern)
                     ->orWhere('brand', $operator, $pattern)
-                    ->orWhere('sku', $operator, $pattern);
+                    ->orWhere('sku', $operator, $pattern)
+                    ->orWhere('barcode', $operator, $pattern);
             });
         }
 
@@ -61,13 +63,46 @@ class ProdukController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function lookupBarcode(Request $request, BarcodeProductLookupService $lookupService): JsonResponse
     {
+        $validated = $request->validate([
+            'barcode' => ['required', 'string', 'min:3', 'max:64'],
+        ], [
+            'barcode.required' => 'Kode barcode wajib diisi.',
+            'barcode.min' => 'Kode barcode minimal 3 karakter.',
+        ]);
+
+        $result = $lookupService->lookup((string) $validated['barcode']);
+
+        $message = match ($result['status']) {
+            'existing_local' => 'Produk dengan barcode/SKU tersebut sudah terdaftar di katalog RiasKu.',
+            'external_found' => 'Data produk ditemukan dari Open Beauty Facts. Silakan periksa dan lengkapi harga serta stok.',
+            default => 'Barcode belum terdaftar. Field barcode telah diisi otomatis untuk input produk baru.',
+        };
+
+        return response()->json([
+            'message' => $message,
+            'data' => $result,
+        ]);
+    }
+
+    public function store(Request $request, BarcodeProductLookupService $lookupService): JsonResponse
+    {
+        if ($request->has('barcode')) {
+            $normalizedBarcode = $lookupService->normalizeBarcode((string) $request->input('barcode', ''));
+            $request->merge(['barcode' => $normalizedBarcode !== '' ? $normalizedBarcode : null]);
+        }
+        if ($request->has('sku')) {
+            $trimmedSku = trim((string) $request->input('sku', ''));
+            $request->merge(['sku' => $trimmedSku !== '' ? $trimmedSku : null]);
+        }
+
         $validated = $request->validate([
             'kategori_id' => ['required', 'exists:kategori,id'],
             'name' => ['required', 'string', 'max:255'],
             'brand' => ['required', 'string', 'max:100'],
             'sku' => ['nullable', 'string', 'max:100', 'unique:produk,sku'],
+            'barcode' => ['nullable', 'string', 'max:64', 'unique:produk,barcode'],
             'weight_grams' => ['required', 'integer', 'min:1'],
             'base_price' => ['required', 'integer', 'min:1'],
             'retail_price' => ['required', 'integer', 'min:1'],
@@ -96,7 +131,12 @@ class ProdukController extends Controller
             'retail_price.required' => 'Harga eceran produk wajib diisi.',
             'retail_price.min' => 'Harga eceran minimal Rp1.',
             'sku.unique' => 'SKU produk sudah digunakan.',
+            'barcode.unique' => 'Barcode produk sudah terdaftar pada produk lain.',
         ]);
+
+        if (empty($validated['sku'])) {
+            $validated['sku'] = $lookupService->generateUniqueSkuFromName((string) $validated['name']);
+        }
 
         $basePrice = (int) $validated['base_price'];
         $retailPrice = (int) $validated['retail_price'];
@@ -193,13 +233,23 @@ class ProdukController extends Controller
         ]);
     }
 
-    public function update(Request $request, Produk $produk): JsonResponse
+    public function update(Request $request, Produk $produk, BarcodeProductLookupService $lookupService): JsonResponse
     {
+        if ($request->has('barcode')) {
+            $normalizedBarcode = $lookupService->normalizeBarcode((string) $request->input('barcode', ''));
+            $request->merge(['barcode' => $normalizedBarcode !== '' ? $normalizedBarcode : null]);
+        }
+        if ($request->has('sku')) {
+            $trimmedSku = trim((string) $request->input('sku', ''));
+            $request->merge(['sku' => $trimmedSku !== '' ? $trimmedSku : null]);
+        }
+
         $validated = $request->validate([
             'kategori_id' => ['required', 'exists:kategori,id'],
             'name' => ['required', 'string', 'max:255'],
             'brand' => ['required', 'string', 'max:100'],
             'sku' => ['nullable', 'string', 'max:100', Rule::unique('produk', 'sku')->ignore($produk->id)],
+            'barcode' => ['nullable', 'string', 'max:64', Rule::unique('produk', 'barcode')->ignore($produk->id)],
             'weight_grams' => ['required', 'integer', 'min:1'],
             'base_price' => ['required', 'integer', 'min:1'],
             'retail_price' => ['required', 'integer', 'min:1'],
@@ -229,6 +279,7 @@ class ProdukController extends Controller
             'base_price.required' => 'Harga modal produk wajib diisi.',
             'retail_price.required' => 'Harga eceran produk wajib diisi.',
             'sku.unique' => 'SKU produk sudah digunakan.',
+            'barcode.unique' => 'Barcode produk sudah terdaftar pada produk lain.',
         ]);
 
         $basePrice = (int) $validated['base_price'];

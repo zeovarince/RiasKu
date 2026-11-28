@@ -12,7 +12,11 @@ Dokumentasi ini merupakan panduan teknis terpadu bagi anggota tim pengembang dan
 | **PPL-16** | `#18` | [`PPL-16-keranjang-belanja.md`](PPL-16-keranjang-belanja.md) | API keranjang `/api/cart*`, Smart Bidirectional Sync (Pinia + PostgreSQL), validasi stok, dan pembersihan sesi logout/checkout. |
 | **PPL-19** | `#21` | [`PPL-19-pembayaran-online-midtrans.md`](PPL-19-pembayaran-online-midtrans.md) | Pembayaran Midtrans Core API (QRIS, VA BCA/BNI/BRI, Mandiri Bill, E-Wallet GoPay/ShopeePay/DANA), webhook SHA-512, auto-polling, dan hardening production. |
 | **PPL-20** | `#22` | [`PPL-20-pembayaran-cod-surabaya.md`](PPL-20-pembayaran-cod-surabaya.md) | Validasi ketat COD khusus Kota Surabaya (frontend & backend `422`), status pesanan COD, konfirmasi pelunasan Admin, dan anti-duplikasi kurir. |
-| **PPL-29** | `#34` | [`PPL-29-qa-fungsional-dan-bugfix-sprint5.md`](PPL-29-qa-fungsional-dan-bugfix-sprint5.md) | Laporan pengujian QA End-to-End (Playwright MCP + live API), perbaikan bug Customer & Admin, live Dashboard Admin API, update WhatsApp (`+62 851-5606-4912`), dan 157 automated tests. |
+| **PPL-29** | `#34` | [`PPL-29-qa-fungsional-dan-bugfix-sprint5.md`](PPL-29-qa-fungsional-dan-bugfix-sprint5.md) | Laporan pengujian QA End-to-End (Playwright MCP + live API), perbaikan bug Customer & Admin, live Dashboard Admin API, update WhatsApp (`+62 851-5606-4912`), dan 162 automated tests. |
+
+### Peningkatan Tambahan Pasca-QA (UI Motion & Input Produk Barcode)
+- **Editorial Silk Curtain Preloader & Sistem Animasi 60fps** (`frontend/index.html`, `App.vue`, `router/index.js`, `HomeView.vue`, `main.css`): Preloader tirai *"RiasKu."* saat reload (tanpa white-flash, semantik `<progress>`, patuh `prefers-reduced-motion`), entrance hero, SPA View Transitions dengan focus routing, scroll-driven reveal, dan tombol Pause/Play WCAG 2.2.2 pada hero slider.
+- **Scan Barcode Produk & Auto-SKU Generator** (`ProductCreateView.vue`, `BarcodeScannerModal.vue`, `useCameraBarcodeScanner.js`, `useHardwareBarcodeScanner.js`, `skuGenerator.js`, `BarcodeProductLookupService.php`, migrasi `add_barcode_to_produk_table`): Mendukung **Scan Kamera Laptop/HP** (`barcode-detector` / `zxing-wasm`), **Upload / Foto Barcode**, dan **Alat Scanner USB/Bluetooth HID**, lengkap dengan `GET /api/admin/produk/lookup-barcode` (cek DB lokal → tombol cepat *Tambah Stok Masuk* / *Ubah Produk*, serta auto-fill opsional Open Beauty Facts) dan generator SKU otomatis dari kombinasi huruf nama produk (`RSK-XXXX-01`).
 
 Dokumentasi lintas tim lain di folder `docs/`:
 - Kontrak API Frontend: [`API-CONTRACT-FRONTEND.md`](API-CONTRACT-FRONTEND.md)
@@ -133,7 +137,7 @@ Frontend aktif di **`http://localhost:5173`**.
 ## 5. Verifikasi Otomatis (Backend & Frontend)
 
 ```bash
-# Backend full test suite (157 tests, 1.138 assertions)
+# Backend full test suite (162 tests, 1.170 assertions)
 cd backend-api
 php artisan test
 

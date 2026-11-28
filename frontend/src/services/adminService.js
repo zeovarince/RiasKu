@@ -10,6 +10,7 @@ export const adminService = {
   // Produk
   getProducts: (params = {}) => dashboardApi.get('/produk', { params }),
   getProduct: (id) => dashboardApi.get(`/produk/${id}`),
+  lookupProductByBarcode: (barcode) => dashboardApi.get('/produk/lookup-barcode', { params: { barcode } }),
   createProduct: (payload) => dashboardApi.post('/produk', payload),
   updateProduct: (id, payload) => dashboardApi.put(`/produk/${id}`, payload),
   toggleProductStatus: (id, isActive) => dashboardApi.patch(`/produk/${id}/status`, { is_active: isActive }),
