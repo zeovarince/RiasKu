@@ -144,16 +144,16 @@ onMounted(() => {
     </AdminPageHeader>
 
     <!-- Global Alert Messages -->
-    <div v-if="successMessage" class="admin-alert-banner success">
+    <div v-if="successMessage" class="admin-alert-banner success" role="status">
       <AdminIcon name="check" :size="18" />
       <span>{{ successMessage }}</span>
-      <button class="admin-alert-close" @click="successMessage = ''">×</button>
+      <button type="button" class="admin-alert-close" aria-label="Tutup notifikasi" @click="successMessage = ''">×</button>
     </div>
 
-    <div v-if="errorMessage" class="admin-alert-banner danger">
+    <div v-if="errorMessage" class="admin-alert-banner danger" role="alert">
       <AdminIcon name="alert-triangle" :size="18" />
       <span>{{ errorMessage }}</span>
-      <button class="admin-alert-close" @click="errorMessage = ''">×</button>
+      <button type="button" class="admin-alert-close" aria-label="Tutup peringatan" @click="errorMessage = ''">×</button>
     </div>
 
     <!-- Inline Add/Edit Form -->
@@ -232,15 +232,19 @@ onMounted(() => {
               <td>
                 <div class="admin-row-actions">
                   <button
+                    type="button"
                     class="admin-icon-button"
                     title="Ubah Nama"
+                    :aria-label="`Ubah kategori ${category.name}`"
                     @click="openEditForm(category)"
                   >
                     <AdminIcon name="edit" :size="15" />
                   </button>
                   <button
+                    type="button"
                     class="admin-icon-button danger"
                     title="Hapus Kategori"
+                    :aria-label="`Hapus kategori ${category.name}`"
                     @click="deleteCategory(category)"
                   >
                     <AdminIcon name="trash" :size="15" />

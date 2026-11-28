@@ -502,8 +502,7 @@ class MidtransService
             case 'gopay':
             case 'shopeepay':
             case 'dana':
-            default:
-                $result['payment_type'] = 'qris';
+                $result['payment_type'] = $channel;
                 $result['bank'] = null;
                 $result['va_number'] = null;
                 $result['bill_key'] = null;
@@ -517,6 +516,24 @@ class MidtransService
                     "Klik bayar atau scan QR Code di atas.",
                     "Periksa total pembayaran Rp " . number_format($amount, 0, ',', '.') . ".",
                     "Konfirmasi pembayaran dengan PIN e-wallet Anda.",
+                ];
+                break;
+
+            default:
+                $result['payment_type'] = 'qris';
+                $result['bank'] = null;
+                $result['va_number'] = null;
+                $result['bill_key'] = null;
+                $result['biller_code'] = null;
+                $qrString = "00020101021226680016ID.CO.RIASKU.EWALLET01{$amount}5303360" . strtoupper(Str::random(6));
+                $result['qr_string'] = $qrString;
+                $result['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qrString);
+                $result['deeplink_url'] = null;
+                $result['instructions'] = [
+                    'Buka aplikasi e-wallet atau mobile banking pilihan Anda.',
+                    'Pilih menu Scan QR / Bayar dengan QRIS.',
+                    'Periksa total pembayaran Rp ' . number_format($amount, 0, ',', '.') . '.',
+                    'Konfirmasi pembayaran dengan PIN Anda.',
                 ];
                 break;
         }

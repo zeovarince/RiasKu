@@ -90,7 +90,12 @@ class ProdukFotoController extends Controller
         $produk = $foto->produk;
         $wasPrimary = $foto->is_primary;
 
-        if (Storage::disk('public')->exists($foto->image_path)) {
+        if (
+            ! str_starts_with($foto->image_path, '/')
+            && ! str_starts_with($foto->image_path, 'http://')
+            && ! str_starts_with($foto->image_path, 'https://')
+            && Storage::disk('public')->exists($foto->image_path)
+        ) {
             Storage::disk('public')->delete($foto->image_path);
         }
 

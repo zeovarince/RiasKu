@@ -36,7 +36,11 @@ class ProdukFoto extends Model
 
     public function getImageUrlAttribute(): string
     {
-        if (str_starts_with($this->image_path, 'http://') || str_starts_with($this->image_path, 'https://')) {
+        if (
+            str_starts_with($this->image_path, 'http://')
+            || str_starts_with($this->image_path, 'https://')
+            || str_starts_with($this->image_path, '/')
+        ) {
             return $this->image_path;
         }
 

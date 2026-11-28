@@ -20,10 +20,15 @@ let sliderTimer
 const heroWhatsAppUrl = computed(() => buildWhatsAppUrl(storeSettings.settings))
 
 const filters = computed(() => {
-  const dynamicNames = categories.value
-    .map((cat) => cat.name)
-    .filter(Boolean)
-    .slice(0, 4)
+  const productCategories = [...new Set(
+    products.value
+      .map((product) => String(product.categoryLabel || '').trim())
+      .filter(Boolean),
+  )]
+  const dynamicNames = (productCategories.length > 0
+    ? productCategories
+    : categories.value.map((cat) => cat.name).filter(Boolean)
+  ).slice(0, 4)
   return ['Semua', ...dynamicNames]
 })
 
@@ -33,6 +38,9 @@ const slides = [
     title: 'Beauty made personal.',
     description: 'Temukan sentuhan rias natural dan produk pilihan untuk setiap momen istimewa.',
     art: 'cushion',
+    image: '/images/products/velvet-matte-cushion.jpg',
+    imageAlt: 'Koleksi Velvet Matte Cushion SPF 35 RiasKu',
+    imagePosition: 'center',
     note: 'Official Cosmetic Store · Surabaya',
     action: 'Jelajahi produk pilihan',
   },
@@ -41,6 +49,9 @@ const slides = [
     title: 'Glow with confidence.',
     description: 'Pilihan complexion dan lip care untuk tampilan segar, lembut, dan percaya diri.',
     art: 'lip',
+    image: '/images/products/glaze-tinted-lip-oil.jpg',
+    imageAlt: 'Glaze Tinted Lip Oil Butter koleksi best seller RiasKu',
+    imagePosition: 'center',
     note: 'Produk favorit pelanggan RiasKu',
     action: 'Lihat koleksi best seller',
   },
@@ -49,6 +60,9 @@ const slides = [
     title: 'Your moment, beautifully yours.',
     description: 'Reservasi layanan makeup profesional untuk wisuda, lamaran, dan hari pernikahan.',
     art: 'bridal',
+    image: '/images/products/paket-rias-pengantin.jpg',
+    imageAlt: 'Layanan Paket Rias Pengantin Modern RiasKu Surabaya',
+    imagePosition: 'center 20%',
     note: 'Booking makeup artist Surabaya',
     action: 'Konsultasi jadwal rias',
   },
@@ -116,7 +130,19 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
         <Transition name="slide-fade" mode="out-in">
           <article :key="activeSlide" class="hero-slide-card">
             <div class="hero-slide-topline"><span class="eyebrow-badge">{{ currentSlide.eyebrow }}</span><span class="slide-index">0{{ activeSlide + 1 }} / 0{{ slides.length }}</span></div>
-            <div class="hero-slide-art"><ProductArtwork :type="currentSlide.art" /></div>
+            <div class="hero-slide-art">
+              <img
+                v-if="currentSlide.image"
+                :src="currentSlide.image"
+                :alt="currentSlide.imageAlt || currentSlide.title"
+                class="hero-slide-photo"
+                width="248"
+                height="248"
+                :fetchpriority="activeSlide === 0 ? 'high' : undefined"
+                :style="{ objectPosition: currentSlide.imagePosition || 'center' }"
+              />
+              <ProductArtwork v-else :type="currentSlide.art" />
+            </div>
             <div class="hero-slide-copy">
               <h2>{{ currentSlide.title }}</h2>
               <p>{{ currentSlide.description }}</p>

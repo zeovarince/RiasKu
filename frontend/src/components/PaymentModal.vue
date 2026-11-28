@@ -35,9 +35,24 @@ let isPollInFlight = false
 let pressedOutsideDialog = false
 
 const isCod = computed(() => props.order?.payment_method === 'cod' || props.payment?.payment_type === 'cod_cash')
-const isQris = computed(() => props.payment?.payment_type === 'qris')
 const isVa = computed(() => props.payment?.payment_type === 'bank_transfer' || props.payment?.payment_type === 'echannel')
-const isEwallet = computed(() => ['gopay', 'shopeepay', 'dana'].includes(props.payment?.payment_type) || Boolean(props.payment?.deeplink_url))
+const ewalletChannel = computed(() => {
+  const type = String(props.payment?.payment_type || '').toLowerCase()
+  const payloadChannel = String(props.payment?.payload_response?.channel || '').toLowerCase()
+  const orderChannel = String(props.order?.payment_channel || '').toLowerCase()
+  for (const candidate of [type, payloadChannel, orderChannel]) {
+    if (['gopay', 'shopeepay', 'dana'].includes(candidate)) return candidate
+  }
+  return ''
+})
+const isEwallet = computed(() => Boolean(ewalletChannel.value) || Boolean(props.payment?.deeplink_url))
+const isQris = computed(() => props.payment?.payment_type === 'qris' && !isEwallet.value)
+const ewalletDisplayLabel = computed(() => {
+  if (ewalletChannel.value === 'gopay') return 'GOPAY'
+  if (ewalletChannel.value === 'shopeepay') return 'SHOPEEPAY'
+  if (ewalletChannel.value === 'dana') return 'DANA'
+  return 'E-WALLET'
+})
 
 const paymentMode = computed(() => {
   const mode = props.payment?.midtrans_mode || props.payment?.payload_response?.mode || ''
@@ -389,14 +404,14 @@ onUnmounted(() => {
           <!-- PPL-19: Tampilan QRIS & E-Wallet QR (GoPay / ShopeePay) Midtrans -->
           <div v-else-if="isQris || (isEwallet && (qrImageSrc || payment.qr_string || payment.qr_url))" class="qris-card">
             <div class="qris-header">
-              <span class="qris-logo">{{ isQris ? 'QRIS' : String(payment.payment_type || 'E-WALLET').toUpperCase() }}</span>
+              <span class="qris-logo">{{ isQris ? 'QRIS' : ewalletDisplayLabel }}</span>
               <span class="qris-badge-midtrans">Midtrans Core API</span>
             </div>
             <div class="qris-visual">
               <img
                 v-if="qrImageSrc"
                 :src="qrImageSrc"
-                :alt="`QR Code ${isQris ? 'QRIS' : payment.payment_type} RiasKu`"
+                :alt="`QR Code ${isQris ? 'QRIS' : ewalletDisplayLabel} RiasKu`"
                 class="qris-image"
                 width="220"
                 height="220"
@@ -404,7 +419,7 @@ onUnmounted(() => {
               />
               <div v-else class="qr-placeholder">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="96" height="96" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                <span>Menyiapkan QRIS Dinamis...</span>
+                <span>{{ isQris ? 'Menyiapkan QRIS Dinamis...' : `Menyiapkan QR ${ewalletDisplayLabel}...` }}</span>
               </div>
             </div>
             <p class="qris-note">

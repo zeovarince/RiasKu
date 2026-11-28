@@ -197,7 +197,7 @@ class OrderStatusService
                 $updates['tracking_number'] = $trackingNumber;
             }
 
-            if ($shippingCourier !== null && $shippingCourier !== '') {
+            if ($shippingCourier !== null && $shippingCourier !== '' && $shippingCourier !== $locked->shipping_courier) {
                 $updates['shipping_courier'] = $shippingCourier;
                 $updates['courier'] = $shippingCourier;
             }
