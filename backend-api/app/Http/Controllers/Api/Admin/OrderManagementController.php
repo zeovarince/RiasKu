@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Pesanan;
 use App\Services\OrderStatusService;
+use App\Support\SqlSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,13 +22,15 @@ class OrderManagementController extends Controller
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('search'))) {
-            $query->where(function (Builder $sub) use ($search): void {
-                $sub->where('order_code', 'like', "%{$search}%")
-                    ->orWhere('customer_name', 'like', "%{$search}%")
-                    ->orWhere('recipient_name', 'like', "%{$search}%")
-                    ->orWhere('customer_phone', 'like', "%{$search}%")
-                    ->orWhere('recipient_phone', 'like', "%{$search}%")
-                    ->orWhere('tracking_number', 'like', "%{$search}%");
+            $operator = SqlSearch::operator($query);
+            $pattern = SqlSearch::pattern($search);
+            $query->where(function (Builder $sub) use ($operator, $pattern): void {
+                $sub->where('order_code', $operator, $pattern)
+                    ->orWhere('customer_name', $operator, $pattern)
+                    ->orWhere('recipient_name', $operator, $pattern)
+                    ->orWhere('customer_phone', $operator, $pattern)
+                    ->orWhere('recipient_phone', $operator, $pattern)
+                    ->orWhere('tracking_number', $operator, $pattern);
             });
         }
 

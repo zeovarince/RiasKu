@@ -19,7 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         }
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $trustedProxies = trim((string) env('TRUSTED_PROXIES', ''));
+        if ($trustedProxies !== '') {
+            $proxies = $trustedProxies === '*'
+                ? '*'
+                : array_values(array_filter(array_map('trim', explode(',', $trustedProxies))));
+            $middleware->trustProxies(at: $proxies);
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

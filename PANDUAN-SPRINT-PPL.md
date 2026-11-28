@@ -80,14 +80,14 @@ git pull origin feature/ppl-19-20-payment-cod
 5. **Konfigurasi Kunci Midtrans Sandbox & Google OAuth di `.env`**:
    Pastikan kunci Midtrans dan Google telah terisi:
    ```env
-   MIDTRANS_MERCHANT_ID=G141532128
-   MIDTRANS_CLIENT_KEY=SB-Mid-client-WoxvUf3e2e-P_k_m
-   MIDTRANS_SERVER_KEY=SB-Mid-server-x-lx1ERHJDvIsrXEPiL3-ByI
+   MIDTRANS_MERCHANT_ID=<MIDTRANS_MERCHANT_ID>
+   MIDTRANS_CLIENT_KEY=<MIDTRANS_CLIENT_KEY>
+   MIDTRANS_SERVER_KEY=<MIDTRANS_SERVER_KEY>
    MIDTRANS_IS_PRODUCTION=false
    MIDTRANS_BASE_URL=https://api.sandbox.midtrans.com
 
-   GOOGLE_CLIENT_ID=630970103407-d64mdp7n6mck52alll9vjdjc0ffsn0js.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=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
+   GOOGLE_CLIENT_ID=<GOOGLE_CLIENT_ID>
+   GOOGLE_CLIENT_SECRET=<GOOGLE_CLIENT_SECRET>
    ```
    > **Catatan:** Jika `MIDTRANS_SERVER_KEY` dikosongkan, backend secara otomatis beralih ke mode simulator internal lokal tanpa mengalami kendala.
 
@@ -125,9 +125,12 @@ git pull origin feature/ppl-19-20-payment-cod
 3. **Pastikan file `.env` Frontend Terisi**:
    File `frontend/.env` harus berisi:
    ```env
+   VITE_API_URL=http://127.0.0.1:8000/api
    VITE_API_BASE_URL=http://127.0.0.1:8000/api
+   VITE_DASHBOARD_API_URL=http://127.0.0.1:8000/api/admin
    VITE_CART_API_ENABLED=true
-   VITE_GOOGLE_CLIENT_ID=630970103407-d64mdp7n6mck52alll9vjdjc0ffsn0js.apps.googleusercontent.com
+   VITE_GOOGLE_CLIENT_ID=<GOOGLE_CLIENT_ID>
+   VITE_GOOGLE_AUTH_URL=http://localhost:8000/auth/google/redirect
    ```
 
 4. **Jalankan Frontend Dev Server**:

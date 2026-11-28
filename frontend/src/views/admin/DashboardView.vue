@@ -1,27 +1,122 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminBadge from './AdminBadge.vue'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
 import { adminService } from '@/services/adminService'
+import { formatRupiah } from '@/utils/currency'
 
-const metrics = [
-  { label: 'Produk aktif', value: '24', note: '+3 produk bulan ini', icon: 'package', tone: 'rose' },
-  { label: 'Menunggu pembayaran', value: '5', note: 'Perlu ditindaklanjuti', icon: 'wallet', tone: 'gold' },
-  { label: 'Pesanan terbaru', value: '18', note: '7 pesanan diproses', icon: 'orders', tone: 'lavender' },
-  { label: 'Penjualan bulan ini', value: 'Rp1.250.000', note: '+12,8% dari bulan lalu', icon: 'sales', tone: 'green' },
-]
-const orders = [
-  ['RK-0014', 'Nadia Safitri', '2 item', 'Rp76.000', 'COD (Uang Tunai)', 'Diproses', 'rose'],
-  ['RK-0013', 'Megan Utami', '1 item', 'Rp95.000', 'QRIS', 'Menunggu', 'gold'],
-  ['RK-0012', 'Dinda Permata', '2 item', 'Rp125.000', 'Transfer BCA', 'Lunas', 'green'],
-]
+const chartDays = ref(7)
+const loadingDashboard = ref(true)
+const dashboardError = ref('')
+const dashboardData = ref(null)
+
 const stockRows = ref([])
 const loadingRestock = ref(false)
+const restockError = ref('')
 const bestSellerRows = ref([])
 const bestSellerMeta = ref({})
 const loadingBestSellers = ref(false)
 const bestSellerError = ref('')
+
+const metrics = computed(() => {
+  const m = dashboardData.value?.metrics
+  const growthText = m?.revenue_growth_pct === null || m?.revenue_growth_pct === undefined
+    ? 'Belum ada data bulan lalu'
+    : `${m.revenue_growth_pct >= 0 ? '+' : ''}${m.revenue_growth_pct}% dari bulan lalu`
+
+  return [
+    {
+      label: 'Produk aktif',
+      value: m ? String(m.active_products) : '—',
+      note: m ? `+${m.new_products_this_month} produk bulan ini` : 'Memuat data...',
+      icon: 'package',
+      tone: 'rose',
+    },
+    {
+      label: 'Menunggu pembayaran',
+      value: m ? String(m.pending_payment_orders) : '—',
+      note: m?.pending_payment_orders > 0 ? 'Perlu ditindaklanjuti' : 'Semua pembayaran lancar',
+      icon: 'wallet',
+      tone: 'gold',
+    },
+    {
+      label: 'Pesanan bulan ini',
+      value: m ? String(m.total_orders_this_month) : '—',
+      note: m ? `${m.processing_orders} pesanan sedang diproses` : 'Memuat data...',
+      icon: 'orders',
+      tone: 'lavender',
+    },
+    {
+      label: 'Penjualan bulan ini',
+      value: m ? formatRupiah(m.monthly_revenue) : '—',
+      note: m ? growthText : 'Memuat data...',
+      icon: 'sales',
+      tone: 'green',
+    },
+  ]
+})
+
+const chartPoints = computed(() => dashboardData.value?.sales_chart?.points || [])
+const chartTotalRevenue = computed(() => Number(dashboardData.value?.sales_chart?.total_revenue || 0))
+const chartMaxValue = computed(() => {
+  const maxVal = Math.max(0, ...chartPoints.value.map((p) => Number(p.revenue) || 0))
+  return maxVal > 0 ? maxVal : 100000
+})
+
+const chartCoords = computed(() => {
+  const pts = chartPoints.value
+  if (!pts.length) return []
+  const maxVal = chartMaxValue.value
+  const lastIdx = Math.max(1, pts.length - 1)
+  return pts.map((point, idx) => {
+    const x = (idx / lastIdx) * 640
+    const y = 178 - ((Number(point.revenue) || 0) / maxVal) * 150
+    return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)), ...point }
+  })
+})
+
+const chartLinePath = computed(() => {
+  if (!chartCoords.value.length) return ''
+  return chartCoords.value.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt.x} ${pt.y}`).join(' ')
+})
+
+const chartAreaPath = computed(() => {
+  if (!chartCoords.value.length) return ''
+  const first = chartCoords.value[0]
+  const last = chartCoords.value[chartCoords.value.length - 1]
+  return `${chartLinePath.value} L${last.x} 190 L${first.x} 190 Z`
+})
+
+const chartYAxisTicks = computed(() => {
+  const maxVal = chartMaxValue.value
+  return [1, 0.75, 0.5, 0.25, 0].map((ratio) => {
+    const val = Math.round(maxVal * ratio)
+    if (val >= 1000000) return `Rp${(val / 1000000).toFixed(1)} jt`
+    if (val >= 1000) return `Rp${Math.round(val / 1000)} rb`
+    return `Rp${val}`
+  })
+})
+
+const chartXAxisLabels = computed(() => {
+  const pts = chartPoints.value
+  if (pts.length <= 7) return pts.map((p) => p.label)
+  const step = Math.ceil((pts.length - 1) / 6)
+  const picked = []
+  for (let i = 0; i < pts.length; i += step) {
+    picked.push(pts[i].label)
+  }
+  const lastLabel = pts[pts.length - 1]?.label
+  if (lastLabel && picked[picked.length - 1] !== lastLabel) {
+    picked[picked.length - 1] = lastLabel
+  }
+  return picked
+})
+
+const categoryDist = computed(() => dashboardData.value?.category_distribution || { total_units: 0, items: [] })
+const recentOrders = computed(() => dashboardData.value?.recent_orders || [])
+const pendingCount = computed(() => Number(dashboardData.value?.metrics?.pending_payment_orders || 0))
+const legendClasses = ['legend-a', 'legend-b', 'legend-c', 'legend-d']
 
 function restockTone(status) {
   if (status === 'Stok Habis') return 'rose'
@@ -36,17 +131,56 @@ function rankTone(rank) {
   return 'neutral'
 }
 
+function orderStatusLabel(status) {
+  const map = {
+    menunggu_pembayaran: 'Menunggu Bayar',
+    diproses: 'Diproses',
+    dikirim: 'Dikirim',
+    selesai: 'Selesai',
+    dibatalkan: 'Dibatalkan',
+  }
+  return map[status] || status || 'Diproses'
+}
+
+function orderStatusTone(status) {
+  if (status === 'selesai') return 'green'
+  if (status === 'dikirim') return 'lavender'
+  if (status === 'diproses') return 'rose'
+  if (status === 'dibatalkan') return 'neutral'
+  return 'gold'
+}
+
+function formatPaymentLabel(order) {
+  if (order.payment_method === 'cod') return 'COD (Uang Tunai)'
+  const ch = String(order.payment_channel || 'online').toUpperCase().replaceAll('_', ' ')
+  return ch
+}
+
 function formatScore(score) {
   return Number(score || 0).toFixed(1)
 }
 
+async function loadDashboard() {
+  loadingDashboard.value = true
+  dashboardError.value = ''
+  try {
+    const res = await adminService.dashboard({ days: Number(chartDays.value) })
+    dashboardData.value = res.data?.data || null
+  } catch (err) {
+    dashboardError.value = err.response?.data?.message || 'Gagal memuat ringkasan dashboard.'
+  } finally {
+    loadingDashboard.value = false
+  }
+}
+
 async function loadRestock() {
   loadingRestock.value = true
+  restockError.value = ''
   try {
     const res = await adminService.getRestockAlerts({ per_page: 5 })
-    stockRows.value = res.data.data || []
+    stockRows.value = res.data?.data || []
   } catch (err) {
-    console.error('Gagal memuat peringatan restock:', err)
+    restockError.value = err.response?.data?.message || 'Gagal memuat peringatan restock.'
   } finally {
     loadingRestock.value = false
   }
@@ -57,26 +191,34 @@ async function loadBestSellers() {
   bestSellerError.value = ''
   try {
     const res = await adminService.getBestSellers({ limit: 5 })
-    bestSellerRows.value = res.data.data || []
-    bestSellerMeta.value = res.data.meta || {}
+    bestSellerRows.value = res.data?.data || []
+    bestSellerMeta.value = res.data?.meta || {}
   } catch (err) {
     bestSellerError.value = err.response?.data?.message || 'Gagal memuat produk best seller.'
-    console.error('Gagal memuat produk best seller:', err)
   } finally {
     loadingBestSellers.value = false
   }
 }
 
 onMounted(() => {
+  loadDashboard()
   loadRestock()
   loadBestSellers()
 })
 </script>
+
 <template>
   <section class="admin-page">
-    <AdminPageHeader eyebrow="ADMIN / RINGKASAN" title="Selamat datang kembali, Admin" description="Ringkasan aktivitas toko RiasKu hari ini.">
-      <template #actions><RouterLink to="/admin/settings" class="admin-btn admin-btn-outline"><AdminIcon name="store" :size="15"/> Lihat toko</RouterLink></template>
+    <AdminPageHeader eyebrow="ADMIN / RINGKASAN" title="Selamat datang kembali, Admin" description="Ringkasan aktivitas dan performa toko RiasKu secara real-time.">
+      <template #actions>
+        <RouterLink to="/" class="admin-btn admin-btn-outline"><AdminIcon name="store" :size="15"/> Lihat toko</RouterLink>
+      </template>
     </AdminPageHeader>
+
+    <div v-if="dashboardError" class="admin-bestseller-error" role="alert">
+      <AdminIcon name="alert-triangle" :size="18" />
+      <span>{{ dashboardError }}</span>
+    </div>
 
     <div class="admin-metric-grid">
       <article v-for="metric in metrics" :key="metric.label" class="admin-metric-card">
@@ -88,31 +230,80 @@ onMounted(() => {
 
     <div class="admin-dashboard-grid">
       <article class="admin-panel admin-chart-panel">
-        <div class="admin-panel-heading"><div><h2>Grafik Penjualan</h2><p>Performa penjualan toko</p></div><select class="admin-select compact"><option>7 hari terakhir</option><option>30 hari terakhir</option></select></div>
-        <div class="admin-chart-total"><strong>Rp757.000</strong><span><i></i> +8,4% minggu ini</span></div>
+        <div class="admin-panel-heading">
+          <div>
+            <h2>Grafik Penjualan</h2>
+            <p>Omzet produk lunas &amp; selesai ({{ chartDays }} hari terakhir)</p>
+          </div>
+          <select v-model="chartDays" class="admin-select compact" aria-label="Rentang grafik penjualan" @change="loadDashboard">
+            <option :value="7">7 hari terakhir</option>
+            <option :value="30">30 hari terakhir</option>
+          </select>
+        </div>
+        <div class="admin-chart-total">
+          <strong>{{ formatRupiah(chartTotalRevenue) }}</strong>
+          <span><i></i> Total periode {{ chartDays }} hari</span>
+        </div>
         <div class="admin-line-chart">
-          <div class="admin-chart-y"><span>Rp800 rb</span><span>Rp600 rb</span><span>Rp400 rb</span><span>Rp200 rb</span><span>Rp0</span></div>
-          <svg viewBox="0 0 640 190" preserveAspectRatio="none" role="img" aria-label="Grafik penjualan meningkat">
-            <defs><linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c66e8b" stop-opacity=".26"/><stop offset="1" stop-color="#c66e8b" stop-opacity="0"/></linearGradient></defs>
-            <path d="M0 153 C45 148 55 130 95 132 S154 118 190 122 S248 98 285 105 S345 91 380 96 S444 68 475 76 S535 55 565 60 S610 44 640 38 L640 190 L0 190Z" fill="url(#salesFill)"/>
-            <path d="M0 153 C45 148 55 130 95 132 S154 118 190 122 S248 98 285 105 S345 91 380 96 S444 68 475 76 S535 55 565 60 S610 44 640 38" fill="none" stroke="#a34d6b" stroke-width="3" vector-effect="non-scaling-stroke"/>
-            <g fill="#fff" stroke="#a34d6b" stroke-width="2"><circle cx="95" cy="132" r="4"/><circle cx="190" cy="122" r="4"/><circle cx="285" cy="105" r="4"/><circle cx="380" cy="96" r="4"/><circle cx="475" cy="76" r="4"/><circle cx="565" cy="60" r="4"/><circle cx="640" cy="38" r="4"/></g>
+          <div class="admin-chart-y">
+            <span v-for="(tick, idx) in chartYAxisTicks" :key="idx">{{ tick }}</span>
+          </div>
+          <svg viewBox="0 0 640 190" preserveAspectRatio="none" role="img" :aria-label="`Grafik penjualan ${chartDays} hari terakhir`">
+            <defs>
+              <linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stop-color="#c66e8b" stop-opacity=".26"/>
+                <stop offset="1" stop-color="#c66e8b" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path v-if="chartAreaPath" :d="chartAreaPath" fill="url(#salesFill)"/>
+            <path v-if="chartLinePath" :d="chartLinePath" fill="none" stroke="#a34d6b" stroke-width="3" vector-effect="non-scaling-stroke"/>
+            <g v-if="chartCoords.length <= 10" fill="#fff" stroke="#a34d6b" stroke-width="2">
+              <circle v-for="pt in chartCoords" :key="pt.date" :cx="pt.x" :cy="pt.y" r="4"/>
+            </g>
           </svg>
-          <div class="admin-chart-x"><span>7 Nov</span><span>8 Nov</span><span>9 Nov</span><span>10 Nov</span><span>11 Nov</span><span>12 Nov</span><span>13 Nov</span></div>
+          <div class="admin-chart-x">
+            <span v-for="(label, idx) in chartXAxisLabels" :key="idx">{{ label }}</span>
+          </div>
         </div>
       </article>
 
       <article class="admin-panel admin-sales-panel">
-        <div class="admin-panel-heading"><div><h2>Barang Terjual</h2><p>Distribusi berdasarkan kategori</p></div><button class="admin-icon-button" title="Lihat laporan"><AdminIcon name="external"/></button></div>
-        <div class="admin-donut-wrap"><div class="admin-donut"><div><strong>24</strong><small>Produk</small></div></div></div>
-        <ul class="admin-legend"><li><i class="legend-a"></i><span>Glow Velvet Lip Tint</span><b>40%</b></li><li><i class="legend-b"></i><span>Bedak & complexion</span><b>25%</b></li><li><i class="legend-c"></i><span>Skincare prep</span><b>20%</b></li><li><i class="legend-d"></i><span>Perlengkapan rias</span><b>15%</b></li></ul>
+        <div class="admin-panel-heading">
+          <div>
+            <h2>Barang Terjual</h2>
+            <p>Distribusi unit terjual 90 hari terakhir</p>
+          </div>
+          <RouterLink to="/admin/reports/monthly" class="admin-icon-button" title="Lihat laporan bulanan" aria-label="Lihat laporan bulanan">
+            <AdminIcon name="external"/>
+          </RouterLink>
+        </div>
+        <div class="admin-donut-wrap">
+          <div class="admin-donut">
+            <div>
+              <strong>{{ categoryDist.total_units }}</strong>
+              <small>Unit terjual</small>
+            </div>
+          </div>
+        </div>
+        <ul v-if="categoryDist.items.length" class="admin-legend">
+          <li v-for="(item, idx) in categoryDist.items" :key="item.category">
+            <i :class="legendClasses[idx % legendClasses.length]"></i>
+            <span>{{ item.category }}</span>
+            <b>{{ item.percentage }}%</b>
+          </li>
+        </ul>
+        <p v-else class="admin-empty" style="margin-top: 8px; text-align: center;">Belum ada produk terjual dalam 90 hari terakhir.</p>
       </article>
 
       <article class="admin-panel admin-stock-panel">
         <div class="admin-panel-heading"><div><h2>Segera Restock</h2><p>Produk dengan persediaan pada atau di bawah batas minimum</p></div><RouterLink to="/admin/inventory/incoming" class="admin-text-link">Lihat semua</RouterLink></div>
+        <div v-if="restockError" class="admin-bestseller-error" role="alert">
+          <AdminIcon name="alert-triangle" :size="16" />
+          <span>{{ restockError }}</span>
+        </div>
         <div class="admin-table-wrap">
           <table class="admin-table">
-            <thead><tr><th>Produk & SKU</th><th>Stok tersedia</th><th>Status</th><th>Aksi</th></tr></thead>
+            <thead><tr><th>Produk &amp; SKU</th><th>Stok tersedia</th><th>Status</th><th>Aksi</th></tr></thead>
             <tbody>
               <tr v-if="loadingRestock"><td colspan="4" class="admin-empty">Memuat peringatan restock...</td></tr>
               <tr v-else-if="!stockRows.length"><td colspan="4" class="admin-empty">Semua produk memiliki stok aman.</td></tr>
@@ -127,11 +318,46 @@ onMounted(() => {
         </div>
       </article>
 
-      <aside class="admin-side-feature"><span class="admin-feature-mark">R</span><div><AdminBadge tone="cream">Perlu perhatian</AdminBadge><h3>5 pesanan menunggu pembayaran</h3><p>Pastikan status pembayaran diperbarui sebelum pesanan diproses.</p><RouterLink to="/admin/orders" class="admin-btn admin-btn-light">Lihat pesanan <AdminIcon name="arrow-left" :size="14"/></RouterLink></div></aside>
+      <aside class="admin-side-feature">
+        <span class="admin-feature-mark">R</span>
+        <div>
+          <AdminBadge tone="cream">{{ pendingCount > 0 ? 'Perlu perhatian' : 'Terkendali' }}</AdminBadge>
+          <h3>
+            {{ pendingCount > 0
+              ? `${pendingCount} pesanan menunggu pembayaran`
+              : 'Tidak ada pesanan menunggu pembayaran'
+            }}
+          </h3>
+          <p>
+            {{ pendingCount > 0
+              ? 'Pastikan status pembayaran diperbarui sebelum pesanan diproses.'
+              : 'Semua pesanan aktif telah terverifikasi atau selesai diproses.'
+            }}
+          </p>
+          <RouterLink to="/admin/orders" class="admin-btn admin-btn-light">Lihat pesanan <AdminIcon name="arrow-left" :size="14"/></RouterLink>
+        </div>
+      </aside>
 
       <article class="admin-panel admin-recent-panel">
         <div class="admin-panel-heading"><div><h2>Pesanan Terbaru</h2><p>Transaksi terbaru dari pelanggan</p></div><RouterLink to="/admin/orders" class="admin-text-link">Lihat semua</RouterLink></div>
-        <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>ID Pesanan</th><th>Pelanggan</th><th>Item</th><th>Total</th><th>Metode bayar</th><th>Status</th><th>Aksi</th></tr></thead><tbody><tr v-for="order in orders" :key="order[0]"><td><strong class="admin-code">{{ order[0] }}</strong></td><td>{{ order[1] }}</td><td>{{ order[2] }}</td><td><strong>{{ order[3] }}</strong></td><td>{{ order[4] }}</td><td><AdminBadge :tone="order[6]">{{ order[5] }}</AdminBadge></td><td><RouterLink :to="`/admin/orders/${order[0]}`" class="admin-mini-link">Detail</RouterLink></td></tr></tbody></table></div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>ID Pesanan</th><th>Pelanggan</th><th>Item</th><th>Total</th><th>Metode bayar</th><th>Status</th><th>Aksi</th></tr></thead>
+            <tbody>
+              <tr v-if="loadingDashboard"><td colspan="7" class="admin-empty">Memuat pesanan terbaru...</td></tr>
+              <tr v-else-if="!recentOrders.length"><td colspan="7" class="admin-empty">Belum ada transaksi pesanan.</td></tr>
+              <tr v-for="order in recentOrders" :key="order.id">
+                <td><strong class="admin-code">{{ order.order_code }}</strong></td>
+                <td>{{ order.customer_name }}</td>
+                <td>{{ order.items_count }} item</td>
+                <td><strong>{{ formatRupiah(order.total_amount) }}</strong></td>
+                <td>{{ formatPaymentLabel(order) }}</td>
+                <td><AdminBadge :tone="orderStatusTone(order.order_status)">{{ orderStatusLabel(order.order_status) }}</AdminBadge></td>
+                <td><RouterLink :to="`/admin/orders/${order.order_code}`" class="admin-mini-link">Detail</RouterLink></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
     </div>
 

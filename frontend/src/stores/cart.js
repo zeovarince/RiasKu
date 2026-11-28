@@ -9,9 +9,83 @@ import {
 } from '@/services/cartService'
 
 const STORAGE_KEY = 'riasku_cart'
+const GUEST_STORAGE_KEY = 'riasku_guest_cart'
 
 function makeCartKey(productId, variantId = null) {
   return `${productId}:${variantId ?? 'default'}`
+}
+
+function readAuthSnapshot() {
+  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
+  let user = null
+  try {
+    user = JSON.parse(localStorage.getItem('riasku_user') || 'null')
+  } catch {
+    user = null
+  }
+  return { token, user }
+}
+
+function isCustomerSession() {
+  const { token, user } = readAuthSnapshot()
+  return Boolean(token) && user?.account_type === 'pelanggan'
+}
+
+function isAdminSession() {
+  const { token, user } = readAuthSnapshot()
+  return Boolean(token) && user?.account_type === 'admin'
+}
+
+function remoteCartEnabled() {
+  return import.meta.env.VITE_CART_API_ENABLED === 'true' && isCustomerSession()
+}
+
+function normalizeStoredRows(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item) => item && item.id)
+    .map((item) => ({
+      ...item,
+      cartKey: item.cartKey || makeCartKey(item.id, item.variantId ?? item.variant_id ?? null),
+      quantity: Math.max(1, Number(item.quantity) || 1),
+    }))
+}
+
+function readJsonStorage(key) {
+  try {
+    return normalizeStoredRows(JSON.parse(localStorage.getItem(key) || '[]'))
+  } catch {
+    return []
+  }
+}
+
+function writeJsonStorage(key, value) {
+  try {
+    if (Array.isArray(value) && value.length > 0) {
+      localStorage.setItem(key, JSON.stringify(value))
+    } else {
+      localStorage.removeItem(key)
+    }
+  } catch (error) {
+    console.warn('Keranjang tidak dapat disimpan pada browser ini.', error)
+  }
+}
+
+function readSavedCart() {
+  if (isAdminSession()) return []
+  if (isCustomerSession()) {
+    const customerItems = readJsonStorage(STORAGE_KEY)
+    const guestItems = readJsonStorage(GUEST_STORAGE_KEY)
+    if (guestItems.length === 0) return customerItems
+    const merged = [...customerItems]
+    for (const guestItem of guestItems) {
+      if (!merged.some((existing) => existing.cartKey === guestItem.cartKey)) {
+        merged.push(guestItem)
+      }
+    }
+    return merged
+  }
+  return readJsonStorage(GUEST_STORAGE_KEY)
 }
 
 function resolveCartStockMeta(product, variant = null, row = null) {
@@ -38,48 +112,42 @@ function resolveCartStockMeta(product, variant = null, row = null) {
   }
 }
 
-function readSavedCart() {
-  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
-  if (!token) {
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {}
-    return []
-  }
+function mapServerRow(row) {
+  const product = row.product || row
+  const variant = row.variant || null
+  const variantId = variant?.id ?? row.variant_id ?? null
+  const stockMeta = resolveCartStockMeta(product, variant, row)
 
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    if (!Array.isArray(saved)) return []
-    return saved.map((item) => ({
-      ...item,
-      cartKey: item.cartKey || makeCartKey(item.id, item.variantId),
-      quantity: Math.max(1, Number(item.quantity) || 1),
-    }))
-  } catch {
-    return []
+  return {
+    ...product,
+    id: product.id,
+    price: Number(row.unit_price ?? variant?.price ?? product.price ?? 0),
+    quantity: Math.max(1, Number(row.quantity) || 1),
+    stock: stockMeta.stock,
+    is_preorder_item: stockMeta.is_preorder_item,
+    preorder_estimate_days: stockMeta.preorder_estimate_days,
+    stock_label: stockMeta.stock_label,
+    variantId,
+    variantName: variant?.name ?? row.variant_name ?? null,
+    serverCartItemId: row.id,
+    cartKey: makeCartKey(product.id, variantId),
   }
-}
-
-function remoteCartEnabled() {
-  const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
-  return import.meta.env.VITE_CART_API_ENABLED === 'true' && Boolean(token)
 }
 
 export const useCartStore = defineStore('cart', () => {
   const items = ref(readSavedCart())
   const syncError = ref('')
   const isSyncing = ref(false)
+  const pendingAddPromises = new Map()
+  let pendingHydratePromise = null
+  let lastHydratedAt = 0
 
   watch(items, (value) => {
-    try {
-      const token = localStorage.getItem('riasku_access_token') || sessionStorage.getItem('riasku_access_token')
-      if (token && value.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch (error) {
-      console.warn('Keranjang tidak dapat disimpan pada browser ini.', error)
+    if (isAdminSession()) return
+    if (isCustomerSession()) {
+      writeJsonStorage(STORAGE_KEY, value)
+    } else {
+      writeJsonStorage(GUEST_STORAGE_KEY, value)
     }
   }, { deep: true })
 
@@ -91,79 +159,59 @@ export const useCartStore = defineStore('cart', () => {
   ))
 
   function setSyncError(error) {
-    syncError.value = error?.message || 'Sinkronisasi keranjang ke server gagal.'
+    syncError.value = error?.response?.data?.message || error?.message || 'Sinkronisasi keranjang ke server gagal.'
   }
 
   /**
-   * PPL-16 & Bugfix: Sinkronisasi Pintar Dua Arah.
-   * Mencegah keranjang lokal hilang saat server mengembalikan array kosong!
-   * Jika server kosong tapi lokal punya data, unggah item lokal ke server.
-   * Jika server punya data, gabungkan (merge) dengan item lokal yang belum ada.
+   * PPL-16: Sinkronisasi keranjang pelanggan.
+   * 1. Jika ada item guest yang ditambahkan sebelum login (termasuk melewati redirect Google OAuth),
+   *    unggah ke server lalu bersihkan riasku_guest_cart.
+   * 2. Ambil daftar keranjang resmi dari server sebagai single source of truth sehingga item yang
+   *    sudah dihapus/checkout di tab lain tidak hidup kembali.
    */
-  async function hydrateCart() {
+  async function hydrateCart(force = false) {
     if (!remoteCartEnabled()) return
+    const guestItems = readJsonStorage(GUEST_STORAGE_KEY)
+
+    if (!force && guestItems.length === 0) {
+      if (pendingHydratePromise) return pendingHydratePromise
+      if (lastHydratedAt > 0 && Date.now() - lastHydratedAt < 2500) return
+    }
+
     isSyncing.value = true
     syncError.value = ''
-    try {
-      const result = await getCart()
-      const rows = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : []
-
-      const serverItems = rows.map((row) => {
-        const product = row.product || row
-        const variant = row.variant || null
-        const stockMeta = resolveCartStockMeta(product, variant, row)
-        return {
-          ...product,
-          id: product.id,
-          price: Number(row.unit_price ?? variant?.price ?? product.price ?? 0),
-          quantity: Math.max(1, Number(row.quantity) || 1),
-          stock: stockMeta.stock,
-          is_preorder_item: stockMeta.is_preorder_item,
-          preorder_estimate_days: stockMeta.preorder_estimate_days,
-          stock_label: stockMeta.stock_label,
-          variantId: variant?.id ?? row.variant_id ?? null,
-          variantName: variant?.name ?? row.variant_name ?? null,
-          serverCartItemId: row.id,
-          cartKey: makeCartKey(product.id, variant?.id ?? row.variant_id ?? null),
-        }
-      })
-
-      if (serverItems.length === 0 && items.value.length > 0) {
-        // SERVER KOSONG tapi LOKAL ADA ITEM (misal dimasukkan sebelum login)
-        // JANGAN hapus item lokal! Sinkronkan item lokal ke server backend!
-        for (const localItem of items.value) {
-          addCartItem({
-            product_id: localItem.id,
-            variant_id: localItem.variantId || null,
-            quantity: localItem.quantity,
-          }).then((res) => {
-            if (res?.id) localItem.serverCartItemId = res.id
-          }).catch(() => {})
-        }
-      } else if (serverItems.length > 0) {
-        // SERVER ADA ITEM: gabungkan (merge) dengan item lokal jika ada yang belum di server
-        const merged = [...serverItems]
-        for (const localItem of items.value) {
-          const inServer = merged.find((s) => s.cartKey === localItem.cartKey)
-          if (!inServer) {
-            merged.push(localItem)
-            addCartItem({
-              product_id: localItem.id,
-              variant_id: localItem.variantId || null,
-              quantity: localItem.quantity,
-            }).then((res) => {
-              if (res?.id) localItem.serverCartItemId = res.id
-            }).catch(() => {})
+    pendingHydratePromise = (async () => {
+      try {
+        if (guestItems.length > 0) {
+          for (const guestItem of guestItems) {
+            try {
+              await addCartItem({
+                product_id: guestItem.id,
+                variant_id: guestItem.variantId ?? guestItem.variant_id ?? null,
+                quantity: guestItem.quantity,
+              })
+            } catch {
+              // Abaikan item guest yang stoknya sudah habis / tidak valid di server
+            }
           }
+          try {
+            localStorage.removeItem(GUEST_STORAGE_KEY)
+          } catch {}
         }
-        items.value = merged
+
+        const result = await getCart()
+        const rows = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : []
+        items.value = rows.map(mapServerRow)
+        lastHydratedAt = Date.now()
+      } catch (error) {
+        setSyncError(error)
+      } finally {
+        isSyncing.value = false
+        pendingHydratePromise = null
       }
-    } catch (error) {
-      setSyncError(error)
-      // Jika terjadi error jaringan / server, jangan pernah menghapus item lokal!
-    } finally {
-      isSyncing.value = false
-    }
+    })()
+
+    return pendingHydratePromise
   }
 
   function addItem(product, quantity = 1, variant = null) {
@@ -200,25 +248,43 @@ export const useCartStore = defineStore('cart', () => {
     }
 
     if (remoteCartEnabled()) {
-      const current = items.value.find((item) => item.cartKey === cartKey)
       const payload = { product_id: product.id, variant_id: variantId, quantity: requestedQuantity }
-      addCartItem(payload)
+      const syncPromise = addCartItem(payload)
         .then((result) => {
+          const current = items.value.find((item) => item.cartKey === cartKey)
           if (current && result?.id) {
             current.serverCartItemId = result.id
+            if (result.variant_id !== undefined && result.variant_id !== null) {
+              const resolvedKey = makeCartKey(product.id, result.variant_id)
+              current.variantId = result.variant_id
+              current.variantName = result.variant?.name ?? current.variantName
+              current.cartKey = resolvedKey
+            }
             if (result.is_preorder_item !== undefined) current.is_preorder_item = Boolean(result.is_preorder_item)
             if (result.preorder_estimate_days !== undefined) current.preorder_estimate_days = result.preorder_estimate_days
             if (result.stock_label) current.stock_label = result.stock_label
+            if (result.variant?.stock !== undefined) current.stock = Number(result.variant.stock)
           }
           syncError.value = ''
+          return result
         })
-        .catch(setSyncError)
+        .catch((error) => {
+          setSyncError(error)
+          return null
+        })
+        .finally(() => {
+          if (pendingAddPromises.get(cartKey) === syncPromise) {
+            pendingAddPromises.delete(cartKey)
+          }
+        })
+
+      pendingAddPromises.set(cartKey, syncPromise)
     }
 
     return items.value.find((item) => item.cartKey === cartKey)
   }
 
-  function updateQuantity(cartKey, quantity) {
+  async function updateQuantity(cartKey, quantity) {
     const item = items.value.find((entry) => entry.cartKey === cartKey || String(entry.id) === String(cartKey))
     if (!item) return
     const nextQuantity = Number(quantity)
@@ -226,19 +292,37 @@ export const useCartStore = defineStore('cart', () => {
 
     const maxQty = item.is_preorder_item ? 99 : Number(item.stock ?? 9999)
     item.quantity = Math.max(1, Math.min(maxQty, Math.floor(nextQuantity)))
-    if (remoteCartEnabled() && item.serverCartItemId) {
+
+    if (!remoteCartEnabled()) return
+
+    if (!item.serverCartItemId && pendingAddPromises.has(item.cartKey)) {
+      await pendingAddPromises.get(item.cartKey)
+    }
+
+    if (item.serverCartItemId) {
       updateCartItem(item.serverCartItemId, { quantity: item.quantity })
         .then(() => { syncError.value = '' })
         .catch(setSyncError)
     }
   }
 
-  function removeItem(cartKey) {
+  async function removeItem(cartKey) {
     const item = items.value.find((entry) => entry.cartKey === cartKey || String(entry.id) === String(cartKey))
     if (!item) return
+
+    const pending = !item.serverCartItemId ? pendingAddPromises.get(item.cartKey) : null
     items.value = items.value.filter((entry) => entry.cartKey !== item.cartKey)
-    if (remoteCartEnabled() && item.serverCartItemId) {
-      removeCartItem(item.serverCartItemId).catch(setSyncError)
+
+    if (!remoteCartEnabled()) return
+
+    let serverId = item.serverCartItemId
+    if (!serverId && pending) {
+      const created = await pending
+      serverId = created?.id ?? null
+    }
+
+    if (serverId) {
+      removeCartItem(serverId).catch(setSyncError)
     }
   }
 
@@ -250,8 +334,11 @@ export const useCartStore = defineStore('cart', () => {
   function resetCart() {
     items.value = []
     syncError.value = ''
+    lastHydratedAt = 0
+    pendingAddPromises.clear()
     try {
       localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(GUEST_STORAGE_KEY)
     } catch {}
   }
 

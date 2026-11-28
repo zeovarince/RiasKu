@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Keranjang;
 use App\Models\Pelanggan;
 use App\Models\Pesanan;
 use App\Models\Produk;
@@ -249,6 +250,11 @@ class CheckoutController extends Controller
             );
             $order->setAttribute('packaging_weight_grams', $quote['packaging_weight_grams']);
             $order->setAttribute('billable_weight_kg', $selectedOption['billable_weight_kg']);
+
+            $cart = Keranjang::where('pelanggan_id', $customer->id)->first();
+            if ($cart) {
+                $cart->items()->delete();
+            }
 
             return $order->load(['items', 'zona', 'statusLogs']);
         }, 3);

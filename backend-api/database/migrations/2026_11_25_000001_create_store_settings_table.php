@@ -13,7 +13,7 @@ return new class extends Migration
             $table->string('store_name', 120)->default('RiasKu');
             $table->string('store_tagline', 255)->default('');
             $table->string('store_logo', 2048)->nullable();
-            $table->text('store_address')->default('');
+            $table->text('store_address')->nullable();
             $table->string('operational_hours', 500)->default('');
             $table->string('whatsapp_number', 20)->nullable();
             $table->string('whatsapp_default_message', 500)->default('Halo RiasKu, saya ingin bertanya.');

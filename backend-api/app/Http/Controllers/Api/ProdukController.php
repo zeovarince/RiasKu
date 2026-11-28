@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Produk;
 use App\Services\BestSellerService;
+use App\Support\SqlSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,21 +23,29 @@ class ProdukController extends Controller
             ->withAvg(['ulasans as reviews_avg_rating' => fn ($review) => $review->where('status', 'approved')], 'rating');
 
         if ($search = trim((string) ($request->query('q') ?? $request->query('search')))) {
-            $query->where(function ($sub) use ($search) {
-                $sub->where('name', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+            $operator = SqlSearch::operator($query);
+            $pattern = SqlSearch::pattern($search);
+            $query->where(function ($sub) use ($operator, $pattern) {
+                $sub->where('name', $operator, $pattern)
+                    ->orWhere('brand', $operator, $pattern)
+                    ->orWhere('sku', $operator, $pattern)
+                    ->orWhere('description', $operator, $pattern);
             });
         }
 
         if ($category = trim((string) $request->query('category'))) {
             if ($category !== 'all') {
                 $query->where(function ($sub) use ($category) {
-                    $sub->where('kategori_id', $category)
-                        ->orWhereHas('kategori', function ($kQuery) use ($category) {
+                    if (ctype_digit($category)) {
+                        $sub->where('kategori_id', (int) $category)
+                            ->orWhereHas('kategori', function ($kQuery) use ($category) {
+                                $kQuery->where('slug', $category);
+                            });
+                    } else {
+                        $sub->whereHas('kategori', function ($kQuery) use ($category) {
                             $kQuery->where('slug', $category);
                         });
+                    }
                 });
             }
         }
@@ -62,8 +71,14 @@ class ProdukController extends Controller
                 $query->orderBy('name', 'asc');
                 break;
             case 'rating':
-                $query->orderByRaw('reviews_avg_rating IS NULL ASC')
-                    ->orderByDesc('reviews_avg_rating');
+                if ($query->getConnection()->getDriverName() === 'pgsql') {
+                    $query->orderByRaw('reviews_avg_rating DESC NULLS LAST')
+                        ->orderBy('id');
+                } else {
+                    $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END ASC')
+                        ->orderByDesc('reviews_avg_rating')
+                        ->orderBy('id');
+                }
                 break;
             case 'best_seller':
             case 'best-seller':

@@ -9,6 +9,7 @@ import { getProductById } from '@/services/productService'
 import { formatRupiah } from '@/utils/currency'
 import ReviewList from '@/components/ReviewList.vue'
 import ReviewForm from '@/components/ReviewForm.vue'
+import RatingStars from '@/components/RatingStars.vue'
 import { getProductReviews, createProductReview } from '@/services/reviewService'
 import { useStoreSettingsStore } from '@/stores/storeSettings'
 import { buildWhatsAppUrl } from '@/utils/whatsapp'
@@ -120,7 +121,7 @@ async function handleReviewSubmit(payload) {
   try {
     const created = await createProductReview(product.value.id, payload)
     if (created) {
-      await loadReviews(product.value.id)
+      await Promise.all([loadReviews(product.value.id), loadProduct(product.value.id)])
       reviewMessage.value = 'Terima kasih! Ulasanmu berhasil disimpan.'
     }
   } catch (err) {
@@ -143,6 +144,7 @@ function handleReviewCreated(event) {
   const productId = event.detail?.productId
   if (productId && String(productId) === String(route.params.id)) {
     loadReviews(route.params.id)
+    loadProduct(route.params.id)
   }
 }
 
@@ -161,7 +163,7 @@ onBeforeUnmount(() => window.removeEventListener('riasku:review-created', handle
     </div>
     <div v-else-if="product" class="detail-layout">
       <div class="detail-visual">
-        <img v-if="product.image_url || product.image" :src="product.image_url || product.image" :alt="product.name" class="detail-product-image" />
+        <img v-if="product.image_url || product.image" :src="product.image_url || product.image" :alt="product.name" class="detail-product-image" width="480" height="480" fetchpriority="high" />
         <ProductArtwork v-else :type="product.art || 'cushion'" />
         <span v-if="product.tag" class="detail-product-tag">{{ product.tag }}</span>
       </div>
@@ -169,7 +171,10 @@ onBeforeUnmount(() => window.removeEventListener('riasku:review-created', handle
         <span class="eyebrow-badge">{{ product.code || `PRODUK #${product.id}` }}</span>
         <p class="detail-category">{{ product.categoryLabel || 'Koleksi RiasKu' }}</p>
         <h1 class="page-title">{{ product.name }}</h1>
-        <p class="product-rating"><span>★★★★★</span> {{ product.rating || '—' }} ({{ product.reviewCount ?? 0 }} Ulasan)</p>
+        <p class="product-rating">
+          <RatingStars :model-value="Number(product.rating || 0)" size="1rem" />
+          {{ product.rating || '—' }} ({{ product.reviewCount ?? 0 }} Ulasan)
+        </p>
         <p class="detail-price">{{ formatRupiah(unitPrice) }}</p>
         <p class="page-subtitle">{{ product.description }}</p>
 

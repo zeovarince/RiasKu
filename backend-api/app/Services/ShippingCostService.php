@@ -177,6 +177,59 @@ class ShippingCostService
         }
     }
 
+    /**
+     * Muat seluruh produk & varian item dalam 2 query batch agar tidak terjadi query berulang.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveItems(array $items): array
+    {
+        $productIds = array_values(array_unique(array_filter(array_map(
+            static fn (array $item): int => (int) ($item['product_id'] ?? $item['produk_id'] ?? 0),
+            $items
+        ))));
+        $variantIds = array_values(array_unique(array_filter(array_map(
+            static fn (array $item): int => (int) ($item['variant_id'] ?? $item['produk_varian_id'] ?? 0),
+            $items
+        ))));
+
+        $products = $productIds !== []
+            ? Produk::query()->whereIn('id', $productIds)->get()->keyBy('id')
+            : collect();
+        $variants = $variantIds !== []
+            ? ProdukVarian::query()->whereIn('id', $variantIds)->where('is_active', true)->get()->keyBy('id')
+            : collect();
+
+        $resolved = [];
+        foreach ($items as $index => $item) {
+            $productId = (int) ($item['product_id'] ?? $item['produk_id'] ?? 0);
+            /** @var Produk|null $product */
+            $product = $item['product'] ?? $products->get($productId);
+            if (! $product || ! $product->is_active) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.product_id" => ['Produk tidak ditemukan atau sedang tidak aktif.'],
+                ]);
+            }
+
+            if (! isset($item['product'])) {
+                $variantId = (int) ($item['variant_id'] ?? $item['produk_varian_id'] ?? 0);
+                /** @var ProdukVarian|null $variant */
+                $variant = $variants->get($variantId);
+                if (! $variant || (int) $variant->produk_id !== (int) $product->id) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.variant_id" => ['Varian tidak ditemukan atau bukan milik produk tersebut.'],
+                    ]);
+                }
+            }
+
+            $item['product'] = $product;
+            $resolved[$index] = $item;
+        }
+
+        return $resolved;
+    }
+
     private function resolveProduct(array $item, int $index): Produk
     {
         $product = $item['product'] ?? Produk::query()->find($item['product_id'] ?? null);

@@ -3,13 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaymentModal from '@/components/PaymentModal.vue'
 import { useAuthStore } from '@/stores/auth'
-import { completeOrder, getMyOrders, getOrderStatus } from '@/services/checkoutService'
-import { syncPaymentStatus } from '@/services/paymentService'
+import { useCartStore } from '@/stores/cart'
+import { cancelOrder, completeOrder, getMyOrders, getOrderStatus } from '@/services/checkoutService'
+import { createPaymentIntent, syncPaymentStatus } from '@/services/paymentService'
 import { formatRupiah } from '@/utils/currency'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const cart = useCartStore()
 
 const isCustomerLoggedIn = computed(() => {
   return auth.isAuthenticated && auth.user?.account_type === 'pelanggan'
@@ -29,6 +31,8 @@ const myOrderStatusFilter = ref('all')
 const myOrderIds = computed(() => new Set(myOrders.value.map((o) => o.order_code)))
 
 const isCompletingOrder = ref(false)
+const isOpeningPayment = ref(false)
+const isCancellingOrder = ref(false)
 const completeFeedback = ref('')
 const copyResiFeedback = ref('')
 
@@ -187,12 +191,52 @@ async function searchOrder(code) {
   }
 }
 
+async function openPaymentModal() {
+  if (!order.value || !isOrderOwner.value || isOpeningPayment.value) return
+  isOpeningPayment.value = true
+  try {
+    const freshPayment = await createPaymentIntent(
+      order.value.order_code || order.value.id,
+      order.value.payment_channel || 'qris',
+    )
+    if (freshPayment) {
+      order.value = { ...order.value, payment: freshPayment }
+    }
+  } catch {
+    // Tetap buka modal dengan data pembayaran yang tersedia
+  } finally {
+    isOpeningPayment.value = false
+    if (order.value?.payment) {
+      showPaymentModal.value = true
+    }
+  }
+}
+
+async function handleCancelOrder() {
+  if (!order.value?.order_code || isCancellingOrder.value) return
+  if (!confirm(`Batalkan pesanan ${order.value.order_code}? Stok produk akan dikembalikan.`)) return
+
+  isCancellingOrder.value = true
+  errorMessage.value = ''
+  completeFeedback.value = ''
+  try {
+    const res = await cancelOrder(order.value.order_code)
+    completeFeedback.value = res?.message || 'Pesanan berhasil dibatalkan.'
+    await Promise.all([searchOrder(order.value.order_code), fetchMyOrders()])
+  } catch (err) {
+    errorMessage.value = err.response?.data?.message || 'Gagal membatalkan pesanan.'
+  } finally {
+    isCancellingOrder.value = false
+  }
+}
+
 function handlePaymentSuccess() {
   showPaymentModal.value = false
   if (order.value?.order_code) {
     searchOrder(order.value.order_code)
   }
   fetchMyOrders()
+  cart.hydrateCart(true).catch(() => {})
 }
 
 const isSyncing = ref(false)
@@ -204,7 +248,9 @@ async function handleSyncLiveStatus() {
   syncFeedback.value = ''
   try {
     const result = await syncPaymentStatus(order.value.order_code)
-    syncFeedback.value = result.message || 'Status berhasil disinkronkan dari Midtrans.'
+    syncFeedback.value = result.message || (result.synced
+      ? 'Status pembayaran berhasil disinkronkan dari Midtrans.'
+      : `Status Midtrans saat ini: ${result.midtrans_status || 'pending'}.`)
     await searchOrder(order.value.order_code)
     fetchMyOrders()
   } catch (err) {
@@ -498,9 +544,10 @@ watch(isCustomerLoggedIn, (loggedIn) => {
               v-if="order.payment"
               class="button button-primary button-reopen-pay"
               type="button"
-              @click="showPaymentModal = true"
+              :disabled="isOpeningPayment"
+              @click="openPaymentModal"
             >
-              💳 Buka Instruksi Pembayaran Midtrans
+              {{ isOpeningPayment ? 'Memuat Instruksi...' : '💳 Buka Instruksi Pembayaran Midtrans' }}
             </button>
             <button
               class="button button-outline"
@@ -510,6 +557,15 @@ watch(isCustomerLoggedIn, (loggedIn) => {
               @click="handleSyncLiveStatus"
             >
               {{ isSyncing ? 'Memeriksa Midtrans...' : '🔄 Cek Status Midtrans' }}
+            </button>
+            <button
+              class="button button-outline"
+              type="button"
+              :disabled="isCancellingOrder"
+              style="padding: 0.6rem 1rem; font-size: 0.85rem; color: #b91c1c; border-color: #fecaca;"
+              @click="handleCancelOrder"
+            >
+              {{ isCancellingOrder ? 'Membatalkan...' : '✕ Batalkan Pesanan' }}
             </button>
           </div>
           <p v-else style="font-size: 0.82rem; margin-top: 0.65rem; color: #6b7280;">

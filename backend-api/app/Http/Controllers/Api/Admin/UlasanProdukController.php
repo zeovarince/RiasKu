@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\UlasanProduk;
 use App\Services\BestSellerService;
+use App\Support\SqlSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,10 +27,12 @@ class UlasanProdukController extends Controller
         }
 
         if ($search = trim((string) $request->query('q'))) {
-            $query->where(function ($sub) use ($search): void {
-                $sub->where('user_name', 'like', "%{$search}%")
-                    ->orWhere('comment', 'like', "%{$search}%")
-                    ->orWhereHas('produk', fn ($product) => $product->where('name', 'like', "%{$search}%"));
+            $operator = SqlSearch::operator($query);
+            $pattern = SqlSearch::pattern($search);
+            $query->where(function ($sub) use ($operator, $pattern): void {
+                $sub->where('user_name', $operator, $pattern)
+                    ->orWhere('comment', $operator, $pattern)
+                    ->orWhereHas('produk', fn ($product) => $product->where('name', $operator, $pattern));
             });
         }
 

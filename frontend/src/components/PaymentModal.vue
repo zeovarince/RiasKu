@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { simulatePaymentSuccess, syncPaymentStatus } from '@/services/paymentService'
 import { formatRupiah } from '@/utils/currency'
@@ -12,9 +12,13 @@ const props = defineProps({
 const emit = defineEmits(['close', 'payment-success'])
 const router = useRouter()
 
+const dialogRef = ref(null)
 const isSimulating = ref(false)
 const isCheckingStatus = ref(false)
-const copied = ref(false)
+const copyStatus = ref('')
+const copyFailed = ref(false)
+const localQrDataUrl = ref('')
+const remoteQrFailed = ref(false)
 const isPaid = ref(
   props.payment?.transaction_status === 'settlement' ||
   props.order?.payment_status === 'dibayar' ||
@@ -23,11 +27,28 @@ const isPaid = ref(
 const simulationMessage = ref('')
 const syncMessage = ref('')
 let pollTimer = null
+let pollDelayMs = 8000
+let isPollingActive = false
+let copyTimer = null
+let lastCopyAnnouncement = ''
+let isPollInFlight = false
+let pressedOutsideDialog = false
 
 const isCod = computed(() => props.order?.payment_method === 'cod' || props.payment?.payment_type === 'cod_cash')
 const isQris = computed(() => props.payment?.payment_type === 'qris')
 const isVa = computed(() => props.payment?.payment_type === 'bank_transfer' || props.payment?.payment_type === 'echannel')
 const isEwallet = computed(() => ['gopay', 'shopeepay', 'dana'].includes(props.payment?.payment_type) || Boolean(props.payment?.deeplink_url))
+
+const paymentMode = computed(() => {
+  const mode = props.payment?.midtrans_mode || props.payment?.payload_response?.mode || ''
+  if (mode) return String(mode).toLowerCase()
+  if (String(props.payment?.transaction_id || '').startsWith('MOCK-')) return 'local_simulation'
+  return import.meta.env.DEV ? 'live_sandbox' : 'live_production'
+})
+
+const isLocalSimulation = computed(() => paymentMode.value === 'local_simulation')
+const isSandboxMode = computed(() => paymentMode.value === 'live_sandbox')
+const canSimulate = computed(() => Boolean(props.payment?.can_simulate) || isLocalSimulation.value)
 
 const bankName = computed(() => {
   const bank = props.payment?.bank || ''
@@ -35,31 +56,189 @@ const bankName = computed(() => {
 })
 
 const qrImageSrc = computed(() => {
-  if (props.payment?.qr_url) return props.payment.qr_url
-  if (props.payment?.qr_string) {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(props.payment.qr_string)}`
-  }
+  if (localQrDataUrl.value) return localQrDataUrl.value
+  if (!remoteQrFailed.value && props.payment?.qr_url) return props.payment.qr_url
   return null
 })
 
-function copyToClipboard(text) {
-  if (!text) return
-  navigator.clipboard.writeText(String(text))
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 2000)
+const midtransSimulatorInfo = computed(() => {
+  const bank = String(props.payment?.bank || '').toLowerCase()
+  const type = String(props.payment?.payment_type || '').toLowerCase()
+  if (type === 'qris') {
+    return {
+      url: 'https://simulator.sandbox.midtrans.com/qris/index',
+      label: 'Buka Midtrans QRIS Simulator ↗',
+      hint: 'Salin URL QR Code di bawah, lalu tempel pada halaman Midtrans QRIS Simulator.',
+    }
+  }
+  if (type === 'bank_transfer' && ['bca', 'bni', 'bri'].includes(bank)) {
+    return {
+      url: `https://simulator.sandbox.midtrans.com/${bank}/va/index`,
+      label: `Buka Midtrans ${bank.toUpperCase()} VA Simulator ↗`,
+      hint: `Salin nomor Virtual Account ${bank.toUpperCase()} di atas, lalu tempel di simulator Midtrans.`,
+    }
+  }
+  if (type === 'echannel') {
+    return {
+      url: 'https://simulator.sandbox.midtrans.com/mandiri/bill/index',
+      label: 'Buka Midtrans Mandiri Bill Simulator ↗',
+      hint: 'Masukkan Kode Perusahaan & Bill Key di atas pada simulator Mandiri Bill Midtrans.',
+    }
+  }
+  if (type === 'gopay') {
+    return {
+      url: 'https://simulator.sandbox.midtrans.com/gopay/ui/index',
+      label: 'Buka Midtrans GoPay Simulator ↗',
+      hint: 'Salin URL QR Code GoPay di bawah atau klik tombol pembayaran GoPay.',
+    }
+  }
+  return {
+    url: 'https://simulator.sandbox.midtrans.com/',
+    label: 'Buka Midtrans Payment Simulator ↗',
+    hint: 'Gunakan simulator resmi Midtrans untuk menguji pelunasan transaksi sandbox.',
+  }
+})
+
+async function renderLocalQr(qrString) {
+  remoteQrFailed.value = false
+  if (!qrString) {
+    localQrDataUrl.value = ''
+    return
+  }
+  try {
+    const mod = await import('qrcode')
+    const toDataURL = mod.toDataURL || mod.default?.toDataURL
+    if (typeof toDataURL === 'function') {
+      localQrDataUrl.value = await toDataURL(String(qrString), {
+        width: 240,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#1f1620', light: '#ffffff' },
+      })
+    }
+  } catch {
+    localQrDataUrl.value = ''
+  }
+}
+
+watch(
+  () => props.payment?.qr_string,
+  (qrString) => {
+    renderLocalQr(qrString)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.payment?.id,
+  () => {
+    isPaid.value = (
+      props.payment?.transaction_status === 'settlement' ||
+      props.order?.payment_status === 'dibayar' ||
+      props.order?.payment_status === 'lunas'
+    )
+    simulationMessage.value = ''
+    syncMessage.value = ''
+    remoteQrFailed.value = false
+    pollDelayMs = 8000
+  }
+)
+
+function legacyCopy(text) {
+  const previousFocus = document.activeElement
+  const field = Object.assign(document.createElement('textarea'), { value: text })
+  field.setAttribute('readonly', '')
+  field.style.cssText = 'position:fixed;inset-block-start:0;opacity:0'
+  document.body.append(field)
+  field.select()
+  try {
+    return document.execCommand('copy')
+  } finally {
+    field.remove()
+    previousFocus?.focus?.({ preventScroll: true })
+  }
+}
+
+function announceCopy(ok, label = 'Nomor VA') {
+  if (copyTimer) clearTimeout(copyTimer)
+  copyFailed.value = !ok
+  let message = ok ? `${label} berhasil disalin` : `Gagal menyalin ${label}`
+  if (message === lastCopyAnnouncement) message += '\u00A0'
+  lastCopyAnnouncement = message
+  copyStatus.value = ''
+  requestAnimationFrame(() => {
+    copyStatus.value = message
+  })
+  copyTimer = setTimeout(() => {
+    copyStatus.value = ''
+    copyFailed.value = false
+  }, 2200)
+}
+
+async function copyToClipboard(text, label = 'Nomor VA') {
+  const value = String(text || '').trim()
+  if (!value) return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else if (!legacyCopy(value)) {
+      throw new Error('Copy failed')
+    }
+    announceCopy(true, label)
+  } catch {
+    if (legacyCopy(value)) {
+      announceCopy(true, label)
+    } else {
+      announceCopy(false, label)
+    }
+  }
+}
+
+function closeModal() {
+  stopPolling()
+  if (dialogRef.value?.open) {
+    dialogRef.value.close()
+  }
+  emit('close')
+}
+
+function handleDialogClose() {
+  stopPolling()
+  emit('close')
+}
+
+function isPointerOutsideDialog(event, dialog) {
+  const rect = dialog.getBoundingClientRect()
+  return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom
+}
+
+function handlePointerDown(event) {
+  if ('closedBy' in HTMLDialogElement.prototype || !dialogRef.value) return
+  pressedOutsideDialog = isPointerOutsideDialog(event, dialogRef.value)
+}
+
+function handlePointerUp(event) {
+  if ('closedBy' in HTMLDialogElement.prototype || !dialogRef.value) return
+  if (pressedOutsideDialog && isPointerOutsideDialog(event, dialogRef.value)) {
+    closeModal()
+  }
+  pressedOutsideDialog = false
 }
 
 /**
- * PPL-19: Live Sync status ke backend & Midtrans Sandbox.
+ * PPL-19: Live Sync status ke backend & Midtrans.
  */
 async function handleCheckStatus(manual = false) {
   if (isPaid.value || isCod.value) return
+  if (!manual && (document.hidden || isPollInFlight)) return
 
+  isPollInFlight = true
   if (manual) isCheckingStatus.value = true
 
   try {
     const orderCode = props.order.order_code || props.order.id
     const result = await syncPaymentStatus(orderCode)
+    pollDelayMs = 8000
 
     const orderPayStatus = String(result?.order?.payment_status || '').toLowerCase()
     const trxStatus = String(result?.midtrans_status || result?.payment?.transaction_status || '').toLowerCase()
@@ -73,31 +252,43 @@ async function handleCheckStatus(manual = false) {
       stopPolling()
       syncMessage.value = `⚠️ Transaksi ${trxStatus || orderPayStatus}. Stok pesanan telah dikembalikan.`
     } else if (manual) {
-      syncMessage.value = `Status terkini: ${trxStatus || orderPayStatus || 'Menunggu Pembayaran'}`
+      syncMessage.value = result?.message || `Status terkini: ${trxStatus || orderPayStatus || 'Menunggu Pembayaran'}`
     }
   } catch (err) {
+    pollDelayMs = Math.min(20000, Math.round(pollDelayMs * 1.5))
     if (manual) {
       syncMessage.value = err.response?.data?.message || 'Gagal memeriksa status ke server.'
     }
   } finally {
+    isPollInFlight = false
     if (manual) isCheckingStatus.value = false
   }
 }
 
 /**
- * Auto-polling setiap 5 detik selama belum lunas.
+ * Auto-polling adaptif (mulai 8 detik, backoff hingga 20 detik bila Midtrans lambat)
+ * agar tidak membebani server lokal saat modal terbuka.
  */
+function scheduleNextPoll() {
+  if (!isPollingActive || isPaid.value || isCod.value || isLocalSimulation.value) return
+  pollTimer = setTimeout(async () => {
+    await handleCheckStatus(false)
+    scheduleNextPoll()
+  }, pollDelayMs)
+}
+
 function startPolling() {
-  if (isPaid.value || isCod.value) return
+  if (isPaid.value || isCod.value || isLocalSimulation.value) return
   stopPolling()
-  pollTimer = setInterval(() => {
-    handleCheckStatus(false)
-  }, 5000)
+  pollDelayMs = 8000
+  isPollingActive = true
+  scheduleNextPoll()
 }
 
 function stopPolling() {
+  isPollingActive = false
   if (pollTimer) {
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
   }
 }
@@ -105,6 +296,7 @@ function stopPolling() {
 async function handleSimulatePay() {
   if (!props.payment?.id) return
   isSimulating.value = true
+  simulationMessage.value = ''
   try {
     const result = await simulatePaymentSuccess(props.payment.id)
     isPaid.value = true
@@ -120,37 +312,55 @@ async function handleSimulatePay() {
 
 function goToTracking() {
   stopPolling()
+  if (dialogRef.value?.open) {
+    dialogRef.value.close()
+  }
   emit('close')
   router.push({ name: 'order-track', query: { code: props.order.order_code } })
 }
 
 onMounted(() => {
+  if (dialogRef.value && !dialogRef.value.open) {
+    dialogRef.value.showModal()
+  }
   startPolling()
 })
 
 onUnmounted(() => {
   stopPolling()
+  if (copyTimer) clearTimeout(copyTimer)
+  if (dialogRef.value?.open) {
+    dialogRef.value.close()
+  }
 })
 </script>
 
 <template>
-  <div class="modal-backdrop" role="dialog" aria-modal="true" @click.self="emit('close')">
-    <div class="modal-card payment-modal">
+  <dialog
+    ref="dialogRef"
+    class="payment-dialog"
+    closedby="any"
+    aria-labelledby="payment-modal-title"
+    @close="handleDialogClose"
+    @pointerdown="handlePointerDown"
+    @pointerup="handlePointerUp"
+  >
+    <div class="payment-modal">
       <header class="modal-header">
         <div>
           <span class="eyebrow-badge">{{ isCod ? 'KONFIRMASI COD SURABAYA' : 'INSTRUKSI PEMBAYARAN MIDTRANS' }}</span>
-          <h2 class="modal-title">Pesanan {{ order.order_code }}</h2>
+          <h1 id="payment-modal-title" class="modal-title">Pesanan {{ order.order_code }}</h1>
         </div>
-        <button class="modal-close-btn" type="button" aria-label="Tutup modal" @click="emit('close')">×</button>
+        <button class="modal-close-btn" type="button" aria-label="Tutup modal pembayaran" @click="closeModal">×</button>
       </header>
 
       <div class="modal-body">
         <!-- Status Banner Berhasil -->
         <div v-if="isPaid" class="payment-success-card">
           <div class="success-icon" aria-hidden="true">✓</div>
-          <h3>Pembayaran Berhasil!</h3>
+          <h2>Pembayaran Berhasil!</h2>
           <p>Terima kasih, pembayaran pesanan Anda telah diverifikasi lunas secara real-time dan sedang segera dipersiapkan oleh tim RiasKu.</p>
-          <button class="button button-primary" type="button" @click="goToTracking">Lihat Status Pesanan →</button>
+          <button class="button button-primary" type="button" autofocus @click="goToTracking">Lihat Status Pesanan →</button>
         </div>
 
         <div v-else class="payment-instructions-wrap">
@@ -158,7 +368,7 @@ onUnmounted(() => {
           <div class="payment-amount-box">
             <span>Total Tagihan Pembayaran</span>
             <strong>{{ formatRupiah(order.total_amount ?? order.total ?? 0) }}</strong>
-            <small v-if="!isCod">Batas waktu bayar: 24 Jam dari pemesanan</small>
+            <small v-if="!isCod">Batas waktu bayar: 24 Jam dari pemesanan · Keranjang aman hingga lunas</small>
             <small v-else>Bayar tunai kepada kurir saat barang tiba di Kota Surabaya</small>
           </div>
 
@@ -176,32 +386,56 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- PPL-19: Tampilan QRIS Midtrans -->
-          <div v-else-if="isQris" class="qris-card">
+          <!-- PPL-19: Tampilan QRIS & E-Wallet QR (GoPay / ShopeePay) Midtrans -->
+          <div v-else-if="isQris || (isEwallet && (qrImageSrc || payment.qr_string || payment.qr_url))" class="qris-card">
             <div class="qris-header">
-              <span class="qris-logo">QRIS</span>
+              <span class="qris-logo">{{ isQris ? 'QRIS' : String(payment.payment_type || 'E-WALLET').toUpperCase() }}</span>
               <span class="qris-badge-midtrans">Midtrans Core API</span>
             </div>
             <div class="qris-visual">
-              <img v-if="qrImageSrc" :src="qrImageSrc" alt="QR Code QRIS RiasKu" class="qris-image" />
+              <img
+                v-if="qrImageSrc"
+                :src="qrImageSrc"
+                :alt="`QR Code ${isQris ? 'QRIS' : payment.payment_type} RiasKu`"
+                class="qris-image"
+                width="220"
+                height="220"
+                @error="remoteQrFailed = true"
+              />
               <div v-else class="qr-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="120" height="120"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                <span>QRIS Dinamis</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="96" height="96" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Menyiapkan QRIS Dinamis...</span>
               </div>
             </div>
-            <p class="qris-note">Mendukung GoPay, OVO, DANA, ShopeePay, BCA Mobile, Livin' Mandiri, dan semua e-wallet / mobile banking berlogo QRIS.</p>
+            <p class="qris-note">
+              {{ isQris
+                ? "Mendukung GoPay, OVO, DANA, ShopeePay, BCA Mobile, Livin' Mandiri, dan semua e-wallet / mobile banking berlogo QRIS."
+                : 'Scan QR Code ini menggunakan aplikasi e-wallet Anda atau klik tombol pembayaran langsung di bawah.'
+              }}
+            </p>
           </div>
 
           <!-- PPL-19: Tampilan Virtual Account Midtrans -->
           <div v-else-if="isVa" class="va-card">
             <div class="va-badge">{{ bankName }}</div>
             <div class="va-number-box">
-              <span class="va-label">Nomor Virtual Account</span>
+              <span class="va-label">{{ payment.biller_code ? 'Nomor Pelanggan / Bill Key' : 'Nomor Virtual Account' }}</span>
               <div class="va-copy-row">
-                <span class="va-code">{{ payment.va_number || payment.bill_key }}</span>
-                <button class="button button-soft button-copy" type="button" @click="copyToClipboard(payment.va_number || payment.bill_key)">
-                  {{ copied ? 'Tersalin ✓' : 'Salin' }}
-                </button>
+                <span id="va-code-value" class="va-code">{{ payment.va_number || payment.bill_key }}</span>
+                <span class="copy-control">
+                  <button
+                    class="button button-soft button-copy"
+                    type="button"
+                    @click="copyToClipboard(payment.va_number || payment.bill_key, payment.biller_code ? 'Bill Key' : 'Nomor VA')"
+                  >
+                    Salin
+                  </button>
+                  <span
+                    class="copy-live-status"
+                    :class="{ visible: Boolean(copyStatus), failed: copyFailed }"
+                    role="status"
+                  >{{ copyStatus }}</span>
+                </span>
               </div>
               <div v-if="payment.biller_code" class="biller-info">
                 <span>Kode Perusahaan Mandiri: <strong>{{ payment.biller_code }}</strong> (RiasKu)</span>
@@ -209,26 +443,48 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- PPL-19: Tampilan E-Wallet (GoPay / ShopeePay) -->
+          <!-- PPL-19: Tampilan E-Wallet Deeplink (GoPay / ShopeePay) -->
           <div v-if="payment.deeplink_url" class="ewallet-action-box">
             <a :href="payment.deeplink_url" target="_blank" rel="noopener noreferrer" class="button button-primary button-deeplink">
-              Buka Pembayaran E-Wallet / Midtrans Simulator ↗
+              Buka Pembayaran E-Wallet ↗
             </a>
+          </div>
+
+          <!-- Simulator Pembayaran Instan (Tampil di Sandbox/Lokal jika diizinkan, selalu disembunyikan di Production) -->
+          <div v-if="!isCod && canSimulate" class="simulator-box">
+            <span class="simulator-title">
+              {{ isSandboxMode ? '⚡ SIMULATOR MIDTRANS SANDBOX (1-KLIK SUKSES)' : '⚡ FITUR SIMULATOR INSTAN (MODE LOKAL)' }}
+            </span>
+            <p>
+              {{ isSandboxMode
+                ? 'Klik tombol di bawah untuk langsung menyimulasikan pembayaran berhasil di mode Sandbox tanpa menunggu webhook:'
+                : 'Klik tombol di bawah untuk melunasi langsung secara lokal tanpa membuka simulator Midtrans:'
+              }}
+            </p>
+            <button
+              class="button button-primary button-simulate"
+              type="button"
+              :disabled="isSimulating"
+              @click="handleSimulatePay"
+            >
+              {{ isSimulating ? 'Memproses Simulasi...' : '✓ Simulasikan Pembayaran Sukses Sekarang' }}
+            </button>
+            <p v-if="simulationMessage" class="notice-message" role="status">{{ simulationMessage }}</p>
           </div>
 
           <!-- Petunjuk Langkah Pembayaran -->
           <div v-if="payment.instructions?.length" class="instructions-accordion">
-            <h4>Panduan Cara Pembayaran:</h4>
+            <h2>Panduan Cara Pembayaran:</h2>
             <ol>
               <li v-for="(step, idx) in payment.instructions" :key="idx">{{ step }}</li>
             </ol>
           </div>
 
-          <!-- Polling & Live Status Check (Real-time Midtrans Sandbox) -->
-          <div v-if="!isCod" class="realtime-status-box">
+          <!-- Polling & Live Status Check (Khusus mode Midtrans Sandbox / Production) -->
+          <div v-if="!isCod && !isLocalSimulation" class="realtime-status-box">
             <div class="status-poll-indicator">
-              <span class="poll-dot"></span>
-              <small>Auto-sync aktif: memantau pelunasan dari Midtrans setiap 5 detik...</small>
+              <span class="poll-dot" aria-hidden="true"></span>
+              <small>Auto-sync aktif: memantau pelunasan dari Midtrans secara berkala...</small>
             </div>
             <button
               class="button button-outline button-check-status"
@@ -238,66 +494,74 @@ onUnmounted(() => {
             >
               {{ isCheckingStatus ? 'Memeriksa ke Midtrans...' : '🔄 Cek Status Pembayaran Sekarang' }}
             </button>
-            <p v-if="syncMessage" class="notice-message sync-notice">{{ syncMessage }}</p>
+            <p v-if="syncMessage" class="notice-message sync-notice" role="status">{{ syncMessage }}</p>
           </div>
 
-          <!-- Link Bantuan Midtrans Simulator (Sandbox Mode) -->
-          <div v-if="!isCod" class="sandbox-helper-box">
-            <span class="helper-label">🛠️ PENGUJIAN MIDTRANS SANDBOX</span>
-            <p>Untuk menguji pelunasan nomor VA atau QRIS ini via Midtrans Simulator resmi:</p>
-            <a
-              href="https://simulator.sandbox.midtrans.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="simulator-external-link"
-            >
-              Buka Midtrans Payment Simulator ↗
-            </a>
-            <small>Salin nomor VA di atas, lalu tempel di simulator bank Midtrans untuk membayar.</small>
-          </div>
-
-          <!-- Simulator Pembayaran Lokal Cepat (Khusus Pembayaran Online, bukan COD) -->
-          <div v-if="!isCod" class="simulator-box">
-            <span class="simulator-title">⚡ FITUR SIMULATOR INSTAN (OFFLINE/LOCAL TEST)</span>
-            <p>Klik tombol di bawah untuk melunasi langsung secara lokal tanpa membuka simulator Midtrans:</p>
-            <button
-              class="button button-primary button-simulate"
-              type="button"
-              :disabled="isSimulating"
-              @click="handleSimulatePay"
-            >
-              {{ isSimulating ? 'Memproses Simulasi...' : '✓ Simulasikan Pembayaran Sukses Sekarang' }}
-            </button>
-            <p v-if="simulationMessage" class="notice-message">{{ simulationMessage }}</p>
+          <!-- Link Bantuan Midtrans Simulator Resmi (Hanya tampil pada mode Sandbox, tidak di Production) -->
+          <div v-if="!isCod && isSandboxMode" class="sandbox-helper-box">
+            <span class="helper-label">🛠️ MIDTRANS OFFICIAL SANDBOX SIMULATOR</span>
+            <p>{{ midtransSimulatorInfo.hint }}</p>
+            <div class="sandbox-actions-row">
+              <a
+                :href="midtransSimulatorInfo.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="simulator-external-link"
+              >
+                {{ midtransSimulatorInfo.label }}
+              </a>
+              <span v-if="payment.qr_url" class="copy-control">
+                <button
+                  class="button button-soft button-copy"
+                  type="button"
+                  @click="copyToClipboard(payment.qr_url, 'URL QR Code')"
+                >
+                  Salin URL QR
+                </button>
+                <span
+                  v-if="!isVa"
+                  class="copy-live-status"
+                  :class="{ visible: Boolean(copyStatus), failed: copyFailed }"
+                  role="status"
+                >{{ copyStatus }}</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
       <footer class="modal-footer">
         <button class="button button-outline" type="button" @click="goToTracking">Cek Pelacakan Pesanan</button>
-        <button class="button button-secondary" type="button" @click="emit('close')">Tutup</button>
+        <button class="button button-secondary" type="button" @click="closeModal">Tutup</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 </template>
 
 <style scoped>
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
+.payment-dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  width: min(520px, calc(100vw - 2rem));
+  max-width: 520px;
+  max-height: 90vh;
+  margin: auto;
+  overflow: visible;
+}
+.payment-dialog:modal {
+  overscroll-behavior: contain;
+}
+.payment-dialog::backdrop {
   background: rgba(18, 14, 20, 0.75);
   backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1050;
-  padding: 1rem;
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .payment-modal {
   background: #ffffff;
   border-radius: 16px;
   width: 100%;
-  max-width: 520px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -321,6 +585,8 @@ onUnmounted(() => {
   border: none;
   font-size: 1.75rem;
   line-height: 1;
+  min-inline-size: 32px;
+  min-block-size: 32px;
   color: #8c717e;
   cursor: pointer;
 }
@@ -413,12 +679,36 @@ onUnmounted(() => {
   margin: 0.5rem 0;
 }
 .qris-image {
-  max-width: 220px;
-  width: 100%;
+  width: 220px;
+  height: 220px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  display: block;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   background: #ffffff;
   padding: 0.5rem;
+}
+.qr-placeholder {
+  width: 220px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #8c717e;
+  background: #ffffff;
+  border: 1px dashed #d9cad3;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+.sandbox-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 .qris-note {
   font-size: 0.75rem;
@@ -447,6 +737,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   background: #ffffff;
   border: 1px solid #d9cad3;
   border-radius: 8px;
@@ -455,14 +746,45 @@ onUnmounted(() => {
 }
 .va-code {
   font-family: monospace;
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: #3b1e2e;
   letter-spacing: 1px;
+  word-break: break-all;
+}
+.copy-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 .button-copy {
+  min-inline-size: 56px;
+  min-block-size: 32px;
   padding: 0.3rem 0.8rem;
   font-size: 0.8rem;
+}
+.copy-live-status {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #166534;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.copy-live-status.visible {
+  opacity: 1;
+}
+.copy-live-status.failed {
+  background: #b91c1c;
 }
 .biller-info {
   margin-top: 0.5rem;
@@ -489,7 +811,7 @@ onUnmounted(() => {
   padding: 0.85rem 1rem;
   border-radius: 8px;
 }
-.instructions-accordion h4 {
+.instructions-accordion h2 {
   font-size: 0.85rem;
   margin: 0 0 0.5rem;
   color: #4b303d;
@@ -524,6 +846,11 @@ onUnmounted(() => {
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .poll-dot {
+    animation: none;
+  }
 }
 .button-check-status {
   width: 100%;
@@ -623,7 +950,7 @@ onUnmounted(() => {
   font-weight: bold;
   margin: 0 auto 1rem;
 }
-.payment-success-card h3 {
+.payment-success-card h2 {
   color: #1f8a42;
   font-size: 1.4rem;
   margin: 0 0 0.5rem;

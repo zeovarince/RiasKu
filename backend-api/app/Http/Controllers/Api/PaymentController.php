@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Keranjang;
 use App\Models\Pembayaran;
 use App\Models\Pesanan;
 use App\Services\MidtransService;
@@ -55,17 +56,36 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        $channel = (string) ($validated['channel'] ?? ($validated['method'] ?? $order->payment_channel ?? 'qris'));
+        $channel = strtolower(trim((string) ($validated['channel'] ?? ($validated['method'] ?? $order->payment_channel ?? 'qris'))));
 
         // Jika sudah ada pembayaran pending yang valid dengan channel yang sama
-        if ($order->latestPembayaran && $order->latestPembayaran->transaction_status === 'pending' && $order->latestPembayaran->expiry_time > now()) {
+        if (
+            $order->latestPembayaran
+            && $order->latestPembayaran->transaction_status === 'pending'
+            && $order->latestPembayaran->expiry_time > now()
+            && $this->midtransService->matchesChannel($order->latestPembayaran, $channel)
+        ) {
             return response()->json([
                 'message' => 'Instruksi pembayaran aktif.',
-                'data' => $order->latestPembayaran,
+                'data' => array_merge($order->latestPembayaran->toArray(), [
+                    'instructions' => $this->midtransService->instructionsForPayment($order->latestPembayaran, $order, $channel),
+                    'midtrans_mode' => $order->latestPembayaran->payload_response['mode'] ?? $this->midtransService->mode(),
+                    'can_simulate' => $this->midtransService->canSimulate(),
+                ]),
             ]);
         }
 
-        $chargeResult = $this->midtransService->charge($order, $channel);
+        try {
+            $chargeResult = $this->midtransService->charge($order, $channel);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+
+        if ($order->payment_channel !== $channel) {
+            $order->update(['payment_channel' => $channel]);
+        }
 
         $payment = Pembayaran::create([
             'pesanan_id' => $order->id,
@@ -89,6 +109,7 @@ class PaymentController extends Controller
             'data' => array_merge($payment->toArray(), [
                 'instructions' => $chargeResult['instructions'] ?? [],
                 'midtrans_mode' => $chargeResult['midtrans_mode'] ?? 'unknown',
+                'can_simulate' => $chargeResult['can_simulate'] ?? $this->midtransService->canSimulate(),
             ]),
         ]);
     }
@@ -131,11 +152,10 @@ class PaymentController extends Controller
      */
     public function simulateSuccess(Request $request, int|string $paymentId): JsonResponse
     {
-        $hasServerKey = trim((string) config('services.midtrans.server_key', '')) !== '';
         $isProdMidtrans = (bool) config('services.midtrans.is_production', false);
 
         abort_if(
-            $this->midtransService->isLiveMode() || $hasServerKey || $isProdMidtrans || app()->isProduction(),
+            ! $this->midtransService->canSimulate() || $isProdMidtrans || app()->isProduction(),
             403,
             'Simulasi pembayaran hanya tersedia di mode sandbox lokal.'
         );
@@ -298,7 +318,7 @@ class PaymentController extends Controller
                 'order' => $order->fresh(),
                 'synced' => $synced,
                 'midtrans_status' => $trxStatus,
-                'midtrans_mode' => 'live_sandbox',
+                'midtrans_mode' => $this->midtransService->mode(),
             ],
         ]);
     }
@@ -432,6 +452,14 @@ class PaymentController extends Controller
                     $paymentUpdates['payload_response'] = $payload;
                 }
                 $payment->update($paymentUpdates);
+            }
+
+            // Kosongkan keranjang pelanggan setelah pembayaran online benar-benar lunas
+            if ($order->pelanggan_id) {
+                $cart = Keranjang::where('pelanggan_id', $order->pelanggan_id)->first();
+                if ($cart) {
+                    $cart->items()->delete();
+                }
             }
 
             return $updatedOrder;

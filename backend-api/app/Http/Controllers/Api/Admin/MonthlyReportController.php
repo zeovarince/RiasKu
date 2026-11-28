@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Support\SqlSearch;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
@@ -249,7 +250,7 @@ class MonthlyReportController extends Controller
      */
     private function soldProducts(array $period): Collection
     {
-        $eligibleOrderIds = $this->successfulOrders($period)->select('p.id');
+        $eligibleOrderIds = $this->successfulOrders($period)->reorder()->select('p.id');
 
         return DB::table('pesanan_item AS item')
             ->join('produk AS product', 'product.id', '=', 'item.produk_id')
@@ -300,19 +301,20 @@ class MonthlyReportController extends Controller
     private function transactionRows(array $period, string $search): array
     {
         $ordersQuery = $this->successfulOrders($period);
+        $likeOperator = SqlSearch::operator($ordersQuery);
         if ($search !== '') {
-            $ordersQuery->where(function (Builder $query) use ($search): void {
-                $like = '%'.$search.'%';
-                $query->where('p.order_code', 'like', $like)
-                    ->orWhere('p.customer_name', 'like', $like)
-                    ->orWhere('p.recipient_name', 'like', $like)
-                    ->orWhereExists(function (Builder $items) use ($like): void {
+            $like = SqlSearch::pattern($search);
+            $ordersQuery->where(function (Builder $query) use ($likeOperator, $like): void {
+                $query->where('p.order_code', $likeOperator, $like)
+                    ->orWhere('p.customer_name', $likeOperator, $like)
+                    ->orWhere('p.recipient_name', $likeOperator, $like)
+                    ->orWhereExists(function (Builder $items) use ($likeOperator, $like): void {
                         $items->selectRaw('1')
                             ->from('pesanan_item AS search_item')
                             ->whereColumn('search_item.pesanan_id', 'p.id')
-                            ->where(function (Builder $names) use ($like): void {
-                                $names->where('search_item.product_name', 'like', $like)
-                                    ->orWhere('search_item.variant_name', 'like', $like);
+                            ->where(function (Builder $names) use ($likeOperator, $like): void {
+                                $names->where('search_item.product_name', $likeOperator, $like)
+                                    ->orWhere('search_item.variant_name', $likeOperator, $like);
                             });
                     });
             });
@@ -376,12 +378,12 @@ class MonthlyReportController extends Controller
             ->orderByDesc('stock.id');
 
         if ($search !== '') {
-            $like = '%'.$search.'%';
-            $stockQuery->where(function (Builder $query) use ($like): void {
-                $query->where('product.name', 'like', $like)
-                    ->orWhere('variant.name', 'like', $like)
-                    ->orWhere('stock.supplier', 'like', $like)
-                    ->orWhere('stock.notes', 'like', $like);
+            $like = SqlSearch::pattern($search);
+            $stockQuery->where(function (Builder $query) use ($likeOperator, $like): void {
+                $query->where('product.name', $likeOperator, $like)
+                    ->orWhere('variant.name', $likeOperator, $like)
+                    ->orWhere('stock.supplier', $likeOperator, $like)
+                    ->orWhere('stock.notes', $likeOperator, $like);
             });
         }
 

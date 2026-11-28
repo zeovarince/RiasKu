@@ -15,21 +15,46 @@ class MidtransService
     protected string $clientKey;
     protected string $merchantId;
     protected bool $isProduction;
+    protected bool $allowSandboxSimulator;
     protected bool $isMock;
     protected string $baseUrl;
 
     public function __construct()
     {
-        $config = config('services.midtrans');
+        $config = config('services.midtrans', []);
 
-        $this->serverKey = (string) ($config['server_key'] ?? env('MIDTRANS_SERVER_KEY', ''));
-        $this->clientKey = (string) ($config['client_key'] ?? env('MIDTRANS_CLIENT_KEY', ''));
-        $this->merchantId = (string) ($config['merchant_id'] ?? env('MIDTRANS_MERCHANT_ID', ''));
-        $this->isProduction = (bool) ($config['is_production'] ?? env('MIDTRANS_IS_PRODUCTION', false));
-        $this->baseUrl = (string) ($config['base_url'] ?? env('MIDTRANS_BASE_URL', 'https://api.sandbox.midtrans.com'));
+        $this->serverKey = trim((string) ($config['server_key'] ?? ''));
+        $this->clientKey = trim((string) ($config['client_key'] ?? ''));
+        $this->merchantId = trim((string) ($config['merchant_id'] ?? ''));
+        $this->isProduction = (bool) ($config['is_production'] ?? false);
+        $this->allowSandboxSimulator = (bool) ($config['allow_sandbox_simulator'] ?? false);
+        $defaultBaseUrl = $this->isProduction ? 'https://api.midtrans.com' : 'https://api.sandbox.midtrans.com';
+        $this->baseUrl = trim((string) ($config['base_url'] ?: $defaultBaseUrl));
 
         // Jika server key kosong, otomatis pakai mode simulasi lokal
-        $this->isMock = empty($this->serverKey);
+        $this->isMock = $this->serverKey === '';
+    }
+
+    public function canSimulate(): bool
+    {
+        $isProduction = filter_var(config('services.midtrans.is_production', $this->isProduction), FILTER_VALIDATE_BOOLEAN);
+        if ($isProduction || app()->isProduction()) {
+            return false;
+        }
+
+        $serverKey = trim((string) config('services.midtrans.server_key', $this->serverKey));
+        $allowSandbox = filter_var(config('services.midtrans.allow_sandbox_simulator', $this->allowSandboxSimulator), FILTER_VALIDATE_BOOLEAN);
+
+        return $serverKey === '' || $allowSandbox;
+    }
+
+    public function mode(): string
+    {
+        if ($this->isMock) {
+            return 'local_simulation';
+        }
+
+        return $this->isProduction ? 'live_production' : 'live_sandbox';
     }
 
     /**
@@ -65,8 +90,12 @@ class MidtransService
             return $this->generateCodCharge($pesanan);
         }
 
-        // Jika server key kosong → simulasi lokal
+        // Jika server key kosong → simulasi lokal (fail-closed di production)
         if ($this->isMock) {
+            if ($this->isProduction || app()->isProduction()) {
+                Log::error('[MidtransService] MIDTRANS_SERVER_KEY belum dikonfigurasi di lingkungan produksi.');
+                throw new \RuntimeException('Konfigurasi payment gateway Midtrans belum tersedia.');
+            }
             Log::info('[MidtransService] Mode simulasi lokal aktif (MIDTRANS_SERVER_KEY kosong).');
             return $this->generateMockCharge($pesanan, $channel);
         }
@@ -76,7 +105,11 @@ class MidtransService
             Log::info("[MidtransService] Charge real Midtrans: order={$pesanan->order_code}, channel={$channel}");
             return $this->chargeRealMidtrans($pesanan, $channel);
         } catch (Exception $e) {
-            Log::warning("[MidtransService] Fallback ke simulasi lokal: {$e->getMessage()}");
+            if ($this->isProduction || app()->isProduction()) {
+                Log::error("[MidtransService] Production charge gagal tanpa fallback mock: {$e->getMessage()}");
+                throw new \RuntimeException('Gagal membuat transaksi pembayaran ke Midtrans. Silakan coba lagi beberapa saat.', 0, $e);
+            }
+            Log::warning("[MidtransService] Fallback ke simulasi lokal (non-production): {$e->getMessage()}");
             return $this->generateMockCharge($pesanan, $channel, 'Fallback dari Midtrans Sandbox: ' . $e->getMessage());
         }
     }
@@ -130,17 +163,21 @@ class MidtransService
                 break;
 
             case 'gopay':
+                $frontendTrackUrl = rtrim((string) config('services.frontend_url', 'http://localhost:5173'), '/')
+                    . '/orders/track?code=' . urlencode($pesanan->order_code);
                 $payload['payment_type'] = 'gopay';
                 $payload['gopay'] = [
                     'enable_callback' => true,
-                    'callback_url' => config('app.url') . '/api/payments/midtrans/webhook',
+                    'callback_url' => $frontendTrackUrl,
                 ];
                 break;
 
             case 'shopeepay':
+                $frontendTrackUrl = rtrim((string) config('services.frontend_url', 'http://localhost:5173'), '/')
+                    . '/orders/track?code=' . urlencode($pesanan->order_code);
                 $payload['payment_type'] = 'shopeepay';
                 $payload['shopeepay'] = [
-                    'callback_url' => config('app.url') . '/order-status',
+                    'callback_url' => $frontendTrackUrl,
                 ];
                 break;
 
@@ -155,7 +192,7 @@ class MidtransService
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
             'Authorization' => $this->authHeader(),
-        ])->timeout(20)->post($this->getBaseUrl() . '/charge', $payload);
+        ])->connectTimeout(5)->timeout(12)->post($this->getBaseUrl() . '/charge', $payload);
 
         if (!$response->successful()) {
             $body = $response->body();
@@ -164,6 +201,16 @@ class MidtransService
         }
 
         $res = $response->json();
+        if (! is_array($res)) {
+            throw new Exception('Midtrans charge returned invalid JSON body.');
+        }
+
+        $midtransStatusCode = isset($res['status_code']) ? (int) $res['status_code'] : 200;
+        if ($midtransStatusCode >= 400) {
+            $statusMessage = (string) ($res['status_message'] ?? 'Transaksi ditolak oleh Midtrans.');
+            Log::error("[MidtransService] Charge ditolak Midtrans (status_code={$midtransStatusCode}): {$statusMessage}");
+            throw new Exception("Midtrans charge rejected ({$midtransStatusCode}): {$statusMessage}");
+        }
 
         Log::info('[MidtransService] Charge berhasil', [
             'transaction_id' => $res['transaction_id'] ?? '-',
@@ -254,7 +301,8 @@ class MidtransService
             'expiry_time' => $expiryTime,
             'instructions' => $instructions,
             'payload_response' => $res,
-            'midtrans_mode' => 'live_sandbox',
+            'midtrans_mode' => $this->mode(),
+            'can_simulate' => $this->canSimulate(),
         ];
     }
 
@@ -276,7 +324,7 @@ class MidtransService
             $response = Http::withHeaders([
                 'Accept' => 'application/json',
                 'Authorization' => $this->authHeader(),
-            ])->timeout(15)->get($this->getBaseUrl() . '/' . $orderId . '/status');
+            ])->connectTimeout(4)->timeout(8)->get($this->getBaseUrl() . '/' . $orderId . '/status');
 
             if (!$response->successful()) {
                 Log::warning("[MidtransService] Sync status gagal untuk {$orderId}: HTTP {$response->status()}");
@@ -352,6 +400,7 @@ class MidtransService
                 'description' => 'Cash On Delivery Surabaya',
             ],
             'midtrans_mode' => 'cod',
+            'can_simulate' => false,
         ];
     }
 
@@ -376,6 +425,7 @@ class MidtransService
                 'note' => $note ?? 'Simulasi Sandbox RiasKu Dual-Mode (isi MIDTRANS_SERVER_KEY untuk mode Midtrans asli)',
             ],
             'midtrans_mode' => 'local_simulation',
+            'can_simulate' => $this->canSimulate(),
         ];
 
         switch ($channel) {
@@ -477,6 +527,53 @@ class MidtransService
     // ─────────────────────────────────────────────────────────────────
     // HELPER: Generate Instructions per Channel
     // ─────────────────────────────────────────────────────────────────
+
+    public function matchesChannel(Pembayaran $payment, string $channel): bool
+    {
+        $normalized = strtolower(trim($channel));
+        $paymentType = strtolower((string) $payment->payment_type);
+        $bank = strtolower((string) ($payment->bank ?? ''));
+        $payloadChannel = strtolower((string) ($payment->payload_response['channel'] ?? ''));
+
+        return match ($normalized) {
+            'qris' => $paymentType === 'qris' && ($payloadChannel === '' || $payloadChannel === 'qris'),
+            'bca_va' => $paymentType === 'bank_transfer' && $bank === 'bca',
+            'bni_va' => $paymentType === 'bank_transfer' && $bank === 'bni',
+            'bri_va' => $paymentType === 'bank_transfer' && $bank === 'bri',
+            'permata_va' => $paymentType === 'bank_transfer' && $bank === 'permata',
+            'mandiri_va' => $paymentType === 'echannel',
+            'gopay', 'shopeepay', 'dana' => $paymentType === $normalized || $payloadChannel === $normalized,
+            default => $paymentType === $normalized,
+        };
+    }
+
+    public function instructionsForPayment(Pembayaran $payment, Pesanan $pesanan, ?string $channel = null): array
+    {
+        $resolvedChannel = $channel ?: $this->resolveChannelFromPayment($payment);
+
+        return $this->generateInstructions($resolvedChannel, $pesanan, [
+            'va_number' => $payment->va_number,
+            'bill_key' => $payment->bill_key,
+            'biller_code' => $payment->biller_code,
+        ]);
+    }
+
+    private function resolveChannelFromPayment(Pembayaran $payment): string
+    {
+        if (! empty($payment->payload_response['channel'])) {
+            return strtolower((string) $payment->payload_response['channel']);
+        }
+
+        if ($payment->payment_type === 'bank_transfer' && ! empty($payment->bank)) {
+            return strtolower((string) $payment->bank) . '_va';
+        }
+
+        if ($payment->payment_type === 'echannel') {
+            return 'mandiri_va';
+        }
+
+        return strtolower((string) ($payment->payment_type ?: 'qris'));
+    }
 
     private function generateInstructions(string $channel, Pesanan $pesanan, array $data): array
     {

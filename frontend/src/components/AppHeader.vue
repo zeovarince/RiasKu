@@ -22,6 +22,10 @@ const isCustomer = computed(() => {
   return auth.isAuthenticated && auth.user?.account_type === 'pelanggan'
 })
 
+const isAdmin = computed(() => {
+  return auth.isAuthenticated && auth.user?.account_type === 'admin'
+})
+
 const userDisplayName = computed(() => {
   return auth.user?.username || auth.user?.name || auth.user?.email?.split('@')[0] || 'Pelanggan'
 })
@@ -85,7 +89,7 @@ onUnmounted(() => {
       <nav class="main-nav" aria-label="Navigasi utama">
         <RouterLink to="/" exact-active-class="is-active">Beranda</RouterLink>
         <RouterLink to="/products" active-class="is-active">Katalog Produk</RouterLink>
-        <RouterLink to="/products/1" :class="{ 'is-active': route.path.startsWith('/products/') }">Detail Produk</RouterLink>
+        <RouterLink to="/ai-assistant" active-class="is-active">Asisten AI</RouterLink>
         <RouterLink v-if="isCustomer" to="/checkout" active-class="is-active">Checkout &amp; COD</RouterLink>
         <RouterLink to="/orders/track" active-class="is-active">Cek Pesanan</RouterLink>
       </nav>
@@ -160,6 +164,7 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <RouterLink v-else-if="isAdmin" class="button button-primary button-login" to="/admin/dashboard">Dashboard Admin</RouterLink>
         <RouterLink v-else class="button button-primary button-login" to="/auth/login">Masuk / Daftar</RouterLink>
       </div>
     </div>

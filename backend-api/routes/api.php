@@ -83,9 +83,10 @@ Route::middleware(['auth:sanctum', EnsurePelanggan::class])->group(function (): 
             return app(CheckoutController::class)->store($request, $shipping);
         }
 
-        return app(OrderController::class)->store($request);
+        return app(OrderController::class)->store($request, requireShippingZone: true);
     });
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
     Route::post('/orders/{id}/complete', [OrderController::class, 'complete']);
     Route::post('/orders/{id}/payments', [PaymentController::class, 'createIntent']);
 
