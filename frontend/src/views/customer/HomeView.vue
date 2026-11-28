@@ -15,6 +15,7 @@ const products = ref([])
 const isFallbackCatalog = ref(false)
 const activeFilter = ref('Semua')
 const activeSlide = ref(0)
+const isSliderPaused = ref(false)
 let sliderTimer
 
 const heroWhatsAppUrl = computed(() => buildWhatsAppUrl(storeSettings.settings))
@@ -84,8 +85,34 @@ function nextSlide() {
   goToSlide(activeSlide.value + 1)
 }
 
-onMounted(async () => {
+function startSliderAutoplay() {
+  stopSliderAutoplay()
+  if (isSliderPaused.value) return
   sliderTimer = window.setInterval(nextSlide, 5500)
+}
+
+function stopSliderAutoplay() {
+  if (sliderTimer) {
+    window.clearInterval(sliderTimer)
+    sliderTimer = null
+  }
+}
+
+function toggleSliderPause() {
+  isSliderPaused.value = !isSliderPaused.value
+  if (isSliderPaused.value) {
+    stopSliderAutoplay()
+  } else {
+    startSliderAutoplay()
+  }
+}
+
+onMounted(async () => {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    isSliderPaused.value = true
+  } else {
+    startSliderAutoplay()
+  }
   try {
     const data = await getHomeData()
     categories.value = data.categories
@@ -99,7 +126,7 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => window.clearInterval(sliderTimer))
+onBeforeUnmount(() => stopSliderAutoplay())
 </script>
 
 <template>
@@ -156,6 +183,14 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
             <button v-for="(_, index) in slides" :key="index" type="button" :aria-label="`Slide ${index + 1}`" :aria-current="activeSlide === index ? 'true' : undefined" :class="{ active: activeSlide === index }" @click="goToSlide(index)"></button>
           </div>
           <div class="slider-arrows">
+            <button
+              type="button"
+              class="slider-pause-btn"
+              :aria-label="isSliderPaused ? 'Putar slide otomatis' : 'Jeda slide otomatis'"
+              @click="toggleSliderPause"
+            >
+              {{ isSliderPaused ? '▶' : '❚❚' }}
+            </button>
             <button type="button" aria-label="Slide sebelumnya" @click="goToSlide(activeSlide - 1)">←</button>
             <button type="button" aria-label="Slide berikutnya" @click="nextSlide">→</button>
           </div>
@@ -163,9 +198,11 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
       </div>
     </section>
 
-    <CategoryQuickLinks :categories="categories" />
+    <div class="reveal-on-scroll">
+      <CategoryQuickLinks :categories="categories" />
+    </div>
 
-    <section class="bestseller-section page-container">
+    <section class="bestseller-section page-container reveal-on-scroll">
       <div class="section-heading">
         <div>
           <span class="section-kicker">PILIHAN PELANGGAN</span>
@@ -194,7 +231,7 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
       <div class="section-bottom-link"><RouterLink to="/products">Lihat semua produk <span>→</span></RouterLink></div>
     </section>
 
-    <section class="consultation-wrap page-container">
+    <section class="consultation-wrap page-container reveal-on-scroll">
       <div class="consultation-banner">
         <div>
           <span class="eyebrow-badge">LAYANAN RIAS &amp; KONSULTASI RESMI</span>

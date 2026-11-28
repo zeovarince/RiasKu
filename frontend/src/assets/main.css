@@ -16,6 +16,9 @@
   --white: #ffffff;
   --serif: 'Playfair Display', Georgia, serif;
   --mono: 'Space Mono', monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * { box-sizing: border-box; }
@@ -43,7 +46,7 @@ button { cursor: pointer; }
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 2px 14px rgba(74, 44, 53, 0.05);
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 .site-header-inner { max-width: 1440px; min-height: 72px; margin: 0 auto; padding: 14px 60px; display: flex; align-items: center; justify-content: space-between; gap: 26px; }
 .brand, .auth-brand, .admin-brand { color: var(--ink); font-family: var(--serif); font-size: 27px; font-weight: 700; letter-spacing: -1px; white-space: nowrap; }
@@ -552,3 +555,142 @@ button { cursor: pointer; }
 .catalog-stock-row .filter-pill.active { border-color: var(--rose); color: #fff; background: var(--rose); }
 .detail-po-notice { width: 100%; margin: 0; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.5; }
 .cart-po-summary-note { margin-top: 12px; padding: 10px 12px; border: 1px dashed #f59e0b; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.5; }
+
+/* Curated 60fps Compositor Motion System */
+main h1:focus:not(:focus-visible),
+main h2:focus:not(:focus-visible),
+.admin-page h1:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.button {
+  transition:
+    transform 0.16s var(--ease-out),
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.button:active {
+  transform: scale(0.97);
+}
+
+.slider-pause-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d5b4be;
+  border-radius: 50%;
+  color: var(--ink);
+  background: #fff;
+  font-size: 10px;
+  display: inline-grid;
+  place-items: center;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.14s var(--ease-out);
+}
+.slider-pause-btn:hover {
+  background: var(--pink);
+  color: var(--rose);
+}
+.slider-pause-btn:active {
+  transform: scale(0.94);
+}
+
+.product-card {
+  transition: transform 0.22s var(--ease-out), border-color 0.2s ease;
+}
+.product-card-image {
+  transition: transform 0.34s var(--ease-out);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .product-card:hover {
+    transform: translateY(-3px);
+    border-color: #dab8c2;
+  }
+  .product-card:hover .product-card-image {
+    transform: scale(1.03);
+  }
+  .whatsapp-float {
+    transition: transform 0.22s var(--ease-out);
+  }
+  .whatsapp-float:hover {
+    transform: translateY(-3px) scale(1.04);
+  }
+}
+
+/* Single orchestrated hero focal entrance once reload preloader lifts */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-app-ready="true"] .hero-copy > * {
+    animation: riasku-hero-enter 0.48s var(--ease-out) both;
+  }
+  html[data-app-ready="true"] .hero-copy > *:nth-child(2) {
+    animation-delay: 65ms;
+  }
+  html[data-app-ready="true"] .hero-copy > *:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  html[data-app-ready="true"] .hero-copy > *:nth-child(4) {
+    animation-delay: 175ms;
+  }
+  html[data-app-ready="true"] .hero-slider {
+    animation: riasku-hero-card-enter 0.54s var(--ease-out) 95ms both;
+  }
+}
+
+@keyframes riasku-hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes riasku-hero-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Progressive scroll-driven editorial reveal (compositor-only, zero JS scroll listeners) */
+@media (prefers-reduced-motion: no-preference) {
+  @supports ((animation-timeline: view()) and (animation-range: entry)) {
+    @keyframes riasku-scroll-reveal {
+      from {
+        opacity: 0.2;
+        transform: translateY(16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .reveal-on-scroll {
+      animation: riasku-scroll-reveal auto linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 28%;
+    }
+  }
+}
+
+/* SPA View Transitions (same-document-transitions) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.22s;
+  animation-timing-function: var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
