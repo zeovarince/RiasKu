@@ -132,7 +132,8 @@ class Produk extends Model
 
         return $query->whereRaw(
             '(SELECT COALESCE(SUM(v.stock), 0) FROM '.$varianTable.' AS v '.
-            'WHERE v.produk_id = '.$produkTable.'.id AND v.is_active = 1) <= '.$produkTable.'.min_stock'
+            'WHERE v.produk_id = '.$produkTable.'.id AND v.is_active = ?) <= '.$produkTable.'.min_stock',
+            [true]
         );
     }
 

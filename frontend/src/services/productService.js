@@ -106,11 +106,35 @@ export function normalizeProduct(product) {
   }
 }
 
-export async function getCategories() {
+const CATEGORIES_CACHE_TTL_MS = 60 * 1000
+let cachedCategories = null
+let cachedCategoriesAt = 0
+let pendingCategoriesRequest = null
+
+export async function getCategories({ force = false } = {}) {
   if (useMockData) return categories
 
-  const response = await api.get('/categories')
-  return normalizeCollection(response.data?.data ?? response.data).map(normalizeCategory)
+  if (!force) {
+    if (cachedCategories && Date.now() - cachedCategoriesAt < CATEGORIES_CACHE_TTL_MS) {
+      return cachedCategories
+    }
+    if (pendingCategoriesRequest) {
+      return pendingCategoriesRequest
+    }
+  }
+
+  pendingCategoriesRequest = api.get('/categories')
+    .then((response) => {
+      const rows = normalizeCollection(response.data?.data ?? response.data).map(normalizeCategory)
+      cachedCategories = rows
+      cachedCategoriesAt = Date.now()
+      return rows
+    })
+    .finally(() => {
+      pendingCategoriesRequest = null
+    })
+
+  return pendingCategoriesRequest
 }
 
 export async function getProducts(params = {}) {
@@ -162,6 +186,51 @@ export async function getProducts(params = {}) {
 
   const response = await api.get('/products', { params })
   return normalizeCollection(response.data?.data ?? response.data).map(normalizeProduct)
+}
+
+export async function getProductsPaginated(params = {}) {
+  const page = Math.max(1, Number(params.page) || 1)
+  const perPage = Math.max(1, min100(Number(params.per_page) || 12))
+
+  if (useMockData) {
+    let result = await getProducts(params)
+    const stockFilter = String(params.stock_label ?? '').trim().toLowerCase()
+    if (stockFilter && stockFilter !== 'all') {
+      result = result.filter((p) => String(p.stock_label || '').toLowerCase() === stockFilter)
+    }
+    const total = result.length
+    const lastPage = Math.max(1, Math.ceil(total / perPage))
+    const safePage = Math.min(page, lastPage)
+    const start = (safePage - 1) * perPage
+    return {
+      items: result.slice(start, start + perPage),
+      meta: { current_page: safePage, last_page: lastPage, per_page: perPage, total },
+    }
+  }
+
+  const cleanParams = { page, per_page: perPage }
+  if (params.q && String(params.q).trim()) cleanParams.q = String(params.q).trim()
+  if (params.category && params.category !== 'all') cleanParams.category = params.category
+  if (params.stock_label && params.stock_label !== 'all') cleanParams.stock_label = params.stock_label
+  if (params.sort && params.sort !== 'recommended') cleanParams.sort = params.sort
+
+  const response = await api.get('/products', { params: cleanParams })
+  const items = normalizeCollection(response.data?.data ?? response.data).map(normalizeProduct)
+  const rawMeta = response.data?.meta
+  const meta = rawMeta
+    ? {
+      current_page: Number(rawMeta.current_page) || page,
+      last_page: Math.max(1, Number(rawMeta.last_page) || 1),
+      per_page: Number(rawMeta.per_page) || perPage,
+      total: Number(rawMeta.total) ?? items.length,
+    }
+    : { current_page: 1, last_page: 1, per_page: items.length || perPage, total: items.length }
+
+  return { items, meta }
+}
+
+function min100(value) {
+  return Math.min(100, value)
 }
 
 export async function getBestSellers(params = {}) {

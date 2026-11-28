@@ -41,7 +41,9 @@ class OrderStatusService
                     'updated_at',
                 ])
                     ->with(['kategori:id,name,slug', 'activeVarians', 'primaryFoto'])
-                    ->withSum(['activeVarians as active_stock_sum'], 'stock');
+                    ->withSum(['activeVarians as active_stock_sum'], 'stock')
+                    ->withCount(['ulasans as review_count' => fn ($review) => $review->where('status', 'approved')])
+                    ->withAvg(['ulasans as reviews_avg_rating' => fn ($review) => $review->where('status', 'approved')], 'rating');
             },
             'latestPembayaran',
         ];
@@ -195,7 +197,7 @@ class OrderStatusService
                 $updates['tracking_number'] = $trackingNumber;
             }
 
-            if ($shippingCourier !== null && $shippingCourier !== '') {
+            if ($shippingCourier !== null && $shippingCourier !== '' && $shippingCourier !== $locked->shipping_courier) {
                 $updates['shipping_courier'] = $shippingCourier;
                 $updates['courier'] = $shippingCourier;
             }

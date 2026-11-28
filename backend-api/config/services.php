@@ -54,7 +54,8 @@ return [
         'merchant_id' => env('MIDTRANS_MERCHANT_ID', ''),
         'client_key' => env('MIDTRANS_CLIENT_KEY', ''),
         'server_key' => env('MIDTRANS_SERVER_KEY', ''),
-        'is_production' => (bool) env('MIDTRANS_IS_PRODUCTION', false),
+        'is_production' => filter_var(env('MIDTRANS_IS_PRODUCTION', false), FILTER_VALIDATE_BOOLEAN),
+        'allow_sandbox_simulator' => filter_var(env('MIDTRANS_ALLOW_SANDBOX_SIMULATOR', false), FILTER_VALIDATE_BOOLEAN),
         'base_url' => env('MIDTRANS_BASE_URL', 'https://api.sandbox.midtrans.com'),
     ],
 

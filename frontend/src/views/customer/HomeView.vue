@@ -4,22 +4,43 @@ import CategoryQuickLinks from '@/components/CategoryQuickLinks.vue'
 import ProductCard from '@/components/ProductCard.vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
 import { getHomeData } from '@/services/homeService'
+import { useStoreSettingsStore } from '@/stores/storeSettings'
+import { buildWhatsAppUrl } from '@/utils/whatsapp'
 
+const storeSettings = useStoreSettingsStore()
 const loading = ref(true)
 const loadError = ref('')
 const categories = ref([])
 const products = ref([])
+const isFallbackCatalog = ref(false)
 const activeFilter = ref('Semua')
 const activeSlide = ref(0)
 let sliderTimer
 
-const filters = ['Semua', 'Complexion', 'Lipstick', 'Paket Jasa Rias']
+const heroWhatsAppUrl = computed(() => buildWhatsAppUrl(storeSettings.settings))
+
+const filters = computed(() => {
+  const productCategories = [...new Set(
+    products.value
+      .map((product) => String(product.categoryLabel || '').trim())
+      .filter(Boolean),
+  )]
+  const dynamicNames = (productCategories.length > 0
+    ? productCategories
+    : categories.value.map((cat) => cat.name).filter(Boolean)
+  ).slice(0, 4)
+  return ['Semua', ...dynamicNames]
+})
+
 const slides = [
   {
     eyebrow: 'RIASKU SIGNATURE STUDIO',
     title: 'Beauty made personal.',
     description: 'Temukan sentuhan rias natural dan produk pilihan untuk setiap momen istimewa.',
     art: 'cushion',
+    image: '/images/products/velvet-matte-cushion.jpg',
+    imageAlt: 'Koleksi Velvet Matte Cushion SPF 35 RiasKu',
+    imagePosition: 'center',
     note: 'Official Cosmetic Store · Surabaya',
     action: 'Jelajahi produk pilihan',
   },
@@ -28,6 +49,9 @@ const slides = [
     title: 'Glow with confidence.',
     description: 'Pilihan complexion dan lip care untuk tampilan segar, lembut, dan percaya diri.',
     art: 'lip',
+    image: '/images/products/glaze-tinted-lip-oil.jpg',
+    imageAlt: 'Glaze Tinted Lip Oil Butter koleksi best seller RiasKu',
+    imagePosition: 'center',
     note: 'Produk favorit pelanggan RiasKu',
     action: 'Lihat koleksi best seller',
   },
@@ -36,6 +60,9 @@ const slides = [
     title: 'Your moment, beautifully yours.',
     description: 'Reservasi layanan makeup profesional untuk wisuda, lamaran, dan hari pernikahan.',
     art: 'bridal',
+    image: '/images/products/paket-rias-pengantin.jpg',
+    imageAlt: 'Layanan Paket Rias Pengantin Modern RiasKu Surabaya',
+    imagePosition: 'center 20%',
     note: 'Booking makeup artist Surabaya',
     action: 'Konsultasi jadwal rias',
   },
@@ -44,7 +71,9 @@ const slides = [
 const currentSlide = computed(() => slides[activeSlide.value])
 const filteredProducts = computed(() => {
   if (activeFilter.value === 'Semua') return products.value
-  return products.value.filter((product) => product.categoryLabel === activeFilter.value)
+  return products.value.filter(
+    (product) => String(product.categoryLabel || '').toLowerCase() === activeFilter.value.toLowerCase(),
+  )
 })
 
 function goToSlide(index) {
@@ -61,6 +90,7 @@ onMounted(async () => {
     const data = await getHomeData()
     categories.value = data.categories
     products.value = data.bestSellers
+    isFallbackCatalog.value = Boolean(data.isFallbackCatalog)
   } catch (error) {
     loadError.value = 'Belum dapat memuat produk. Silakan coba lagi.'
     console.error(error)
@@ -81,7 +111,18 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
         <p>Koleksi kosmetik teruji klinis dan layanan tata rias profesional di Surabaya. Diformulasikan lembut untuk ketahanan prima pada kulit perempuan Indonesia.</p>
         <div class="hero-actions">
           <RouterLink to="/products" class="button button-primary">Jelajahi Katalog <span aria-hidden="true">↗</span></RouterLink>
-          <a class="button button-outline" href="https://wa.me/" target="_blank" rel="noreferrer"><span class="button-symbol">◔</span> Konsultasi WhatsApp</a>
+          <a
+            v-if="storeSettings.hasActiveWhatsApp && heroWhatsAppUrl"
+            class="button button-outline"
+            :href="heroWhatsAppUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span class="button-symbol" aria-hidden="true">◔</span> Konsultasi WhatsApp
+          </a>
+          <RouterLink v-else to="/consultation" class="button button-outline">
+            <span class="button-symbol" aria-hidden="true">◔</span> Konsultasi Rias
+          </RouterLink>
         </div>
       </div>
 
@@ -89,7 +130,19 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
         <Transition name="slide-fade" mode="out-in">
           <article :key="activeSlide" class="hero-slide-card">
             <div class="hero-slide-topline"><span class="eyebrow-badge">{{ currentSlide.eyebrow }}</span><span class="slide-index">0{{ activeSlide + 1 }} / 0{{ slides.length }}</span></div>
-            <div class="hero-slide-art"><ProductArtwork :type="currentSlide.art" /></div>
+            <div class="hero-slide-art">
+              <img
+                v-if="currentSlide.image"
+                :src="currentSlide.image"
+                :alt="currentSlide.imageAlt || currentSlide.title"
+                class="hero-slide-photo"
+                width="248"
+                height="248"
+                :fetchpriority="activeSlide === 0 ? 'high' : undefined"
+                :style="{ objectPosition: currentSlide.imagePosition || 'center' }"
+              />
+              <ProductArtwork v-else :type="currentSlide.art" />
+            </div>
             <div class="hero-slide-copy">
               <h2>{{ currentSlide.title }}</h2>
               <p>{{ currentSlide.description }}</p>
@@ -116,8 +169,16 @@ onBeforeUnmount(() => window.clearInterval(sliderTimer))
       <div class="section-heading">
         <div>
           <span class="section-kicker">PILIHAN PELANGGAN</span>
-          <h2>Paling Diminati <span>(Best Seller)</span></h2>
-          <p>Produk yang paling sering dibeli dalam 90 hari terakhir, dengan jumlah unit dan rating sebagai penilaian tambahan.</p>
+          <h2>
+            {{ isFallbackCatalog ? 'Produk Pilihan' : 'Paling Diminati' }}
+            <span>{{ isFallbackCatalog ? '(Koleksi Terbaru)' : '(Best Seller)' }}</span>
+          </h2>
+          <p>
+            {{ isFallbackCatalog
+              ? 'Koleksi produk terbaru dan unggulan yang siap dipesan dari RiasKu Official Store.'
+              : 'Produk yang paling sering dibeli dalam 90 hari terakhir, dengan jumlah unit dan rating sebagai penilaian tambahan.'
+            }}
+          </p>
         </div>
         <div class="filter-pills" aria-label="Filter kategori produk">
           <button v-for="filter in filters" :key="filter" type="button" :class="['filter-pill', { active: activeFilter === filter }]" @click="activeFilter = filter">{{ filter }}</button>

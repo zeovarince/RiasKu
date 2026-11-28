@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\AdminAuthController;
 use App\Http\Controllers\Api\Admin\BestSellerController;
+use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\KategoriController;
 use App\Http\Controllers\Api\Admin\MonthlyReportController;
 use App\Http\Controllers\Api\Admin\OrderManagementController;
@@ -26,6 +27,7 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     });
 
     Route::get('/user', fn (Request $request) => $request->user());
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // Pengaturan toko dan WhatsApp (PPL-27)
     Route::get('/settings/store', [StoreSettingsController::class, 'adminShow']);

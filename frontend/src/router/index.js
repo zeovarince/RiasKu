@@ -44,7 +44,7 @@ const routes = [
       { path: 'orders', name: 'admin-orders', component: () => import('@/views/admin/OrdersView.vue') },
       { path: 'orders/:id', name: 'admin-order-detail', component: () => import('@/views/admin/OrderDetailView.vue') },
       { path: 'inventory/incoming', name: 'admin-incoming-stock', component: () => import('@/views/admin/IncomingStockView.vue') },
-      { path: 'sales/direct', name: 'admin-direct-sales', component: () => import('@/views/admin/DirectSalesView.vue') },
+      { path: 'sales/direct', redirect: '/admin/dashboard' },
       { path: 'reports/monthly', name: 'admin-monthly-report', component: () => import('@/views/admin/MonthlyReportView.vue') },
       { path: 'settings', name: 'admin-settings', component: () => import('@/views/admin/StoreSettingsView.vue') },
     ],

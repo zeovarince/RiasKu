@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Produk;
 use App\Models\ProdukVarian;
+use App\Support\SqlSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,11 +20,13 @@ class ProdukController extends Controller
             ->withSum(['activeVarians as active_stock_sum'], 'stock');
 
         if ($request->filled('q') || $request->filled('search')) {
-            $keyword = $request->input('q') ?? $request->input('search');
-            $query->where(function ($q) use ($keyword): void {
-                $q->where('name', 'like', "%{$keyword}%")
-                    ->orWhere('brand', 'like', "%{$keyword}%")
-                    ->orWhere('sku', 'like', "%{$keyword}%");
+            $keyword = (string) ($request->input('q') ?? $request->input('search'));
+            $operator = SqlSearch::operator($query);
+            $pattern = SqlSearch::pattern($keyword);
+            $query->where(function ($q) use ($operator, $pattern): void {
+                $q->where('name', $operator, $pattern)
+                    ->orWhere('brand', $operator, $pattern)
+                    ->orWhere('sku', $operator, $pattern);
             });
         }
 

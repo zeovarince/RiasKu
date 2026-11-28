@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useCartStore } from '@/stores/cart'
 import { useAuthStore } from '@/stores/auth'
-import { createOrder } from '@/services/checkoutService'
+import { cancelOrder, createOrder } from '@/services/checkoutService'
+import { createPaymentIntent } from '@/services/paymentService'
 import { getRates, getZones } from '@/services/shippingService'
 import { formatRupiah } from '@/utils/currency'
 import PaymentModal from '@/components/PaymentModal.vue'
@@ -13,13 +14,25 @@ const auth = useAuthStore()
 const NO_DETAIL = '__none__'
 
 const isSubmitting = ref(false)
+const isCancellingPending = ref(false)
+const isInitializing = ref(true)
 const loadingZones = ref(true)
 const loadingRates = ref(false)
 const errorMessage = ref('')
+const infoMessage = ref('')
 const shippingError = ref('')
 const activeOrder = ref(null)
 const activePayment = ref(null)
+const completedOrder = ref(null)
+const pendingOrderFingerprint = ref('')
 const showPaymentModal = ref(false)
+
+const hasPendingOnlineOrder = computed(() => Boolean(
+  activeOrder.value
+  && activePayment.value
+  && !completedOrder.value
+  && activeOrder.value.payment_method !== 'cod',
+))
 
 const zones = ref([])
 const quote = ref(null)
@@ -220,15 +233,19 @@ async function loadShippingQuote() {
 watch(
   () => `${selectedZone.value?.id ?? ''}|${rateItemPayload.value.map((i) => `${i.product_id}:${i.variant_id}:${i.quantity}`).join(',')}`,
   () => {
+    if (isInitializing.value) return
     loadShippingQuote()
   },
 )
 
 onMounted(async () => {
   loadingZones.value = true
+  isInitializing.value = true
   try {
-    await cart.hydrateCart()
-    const list = await getZones()
+    const [, list] = await Promise.all([
+      cart.hydrateCart(),
+      getZones(),
+    ])
     zones.value = Array.isArray(list) ? list : []
 
     // Pre-select default Surabaya (Gubeng) jika tersedia agar pengalaman demo COD langsung siap
@@ -248,6 +265,10 @@ onMounted(async () => {
     shippingError.value = err.response?.data?.message || 'Daftar zona pengiriman belum dapat dimuat.'
   } finally {
     loadingZones.value = false
+    isInitializing.value = false
+    if (selectedZone.value && rateItemPayload.value.length > 0) {
+      loadShippingQuote()
+    }
   }
 })
 
@@ -297,9 +318,13 @@ function validateField(field) {
   }
 
   if (field === 'service') {
-    errors.value.service = selectedZone.value && !selectedRate.value
-      ? 'Silakan pilih layanan kurir pengiriman terlebih dahulu.'
-      : ''
+    if (!selectedZone.value) {
+      errors.value.service = 'Pilih provinsi, kota, kecamatan, dan kode pos terlebih dahulu untuk menghitung ongkos kirim.'
+    } else if (!selectedRate.value) {
+      errors.value.service = 'Silakan pilih layanan kurir pengiriman terlebih dahulu.'
+    } else {
+      errors.value.service = ''
+    }
   }
 }
 
@@ -316,6 +341,58 @@ async function validateForm() {
   }
 
   return true
+}
+
+function buildCheckoutFingerprint() {
+  return JSON.stringify({
+    name: buyer.value.name.trim(),
+    phone: buyer.value.phone.trim(),
+    address: buyer.value.address.trim(),
+    notes: (buyer.value.notes || '').trim(),
+    zoneId: selectedZone.value?.id ?? null,
+    courier: selectedRate.value?.courier ?? null,
+    service: selectedRate.value?.service ?? null,
+    items: cart.items.map((item) => ({
+      id: item.id,
+      variantId: item.variantId ?? item.variant_id ?? null,
+      quantity: item.quantity,
+    })),
+  })
+}
+
+function handlePaymentSuccess(result) {
+  if (result?.order) {
+    activeOrder.value = { ...activeOrder.value, ...result.order }
+  }
+  if (result?.payment) {
+    activePayment.value = { ...activePayment.value, ...result.payment }
+  }
+  completedOrder.value = activeOrder.value
+  pendingOrderFingerprint.value = ''
+  infoMessage.value = ''
+  cart.resetCart()
+}
+
+function handleClosePaymentModal() {
+  showPaymentModal.value = false
+}
+
+async function handleCancelPendingOrder() {
+  if (!activeOrder.value?.order_code || isCancellingPending.value) return
+  isCancellingPending.value = true
+  errorMessage.value = ''
+  infoMessage.value = ''
+  try {
+    const res = await cancelOrder(activeOrder.value.order_code)
+    activeOrder.value = null
+    activePayment.value = null
+    pendingOrderFingerprint.value = ''
+    infoMessage.value = res?.message || 'Pesanan sebelumnya dibatalkan dan keranjang Anda tetap tersimpan.'
+  } catch (err) {
+    errorMessage.value = err.response?.data?.message || 'Gagal membatalkan pesanan sebelumnya.'
+  } finally {
+    isCancellingPending.value = false
+  }
 }
 
 async function submitCheckout() {
@@ -337,6 +414,43 @@ async function submitCheckout() {
 
   isSubmitting.value = true
   errorMessage.value = ''
+  infoMessage.value = ''
+
+  const currentFingerprint = buildCheckoutFingerprint()
+
+  // Jika sudah ada pesanan online yang menunggu pembayaran dengan alamat & keranjang sama,
+  // cukup perbarui channel/instruksi pembayaran tanpa membuat pesanan duplikat atau memotong stok 2x.
+  if (
+    method.value === 'online'
+    && hasPendingOnlineOrder.value
+    && pendingOrderFingerprint.value === currentFingerprint
+  ) {
+    try {
+      const intent = await createPaymentIntent(activeOrder.value.id || activeOrder.value.order_code, onlineChannel.value)
+      activePayment.value = intent
+      activeOrder.value = { ...activeOrder.value, payment_channel: onlineChannel.value }
+      showPaymentModal.value = true
+      return
+    } catch (err) {
+      errorMessage.value = err.response?.data?.message || err.message || 'Gagal memuat ulang instruksi pembayaran.'
+      return
+    } finally {
+      isSubmitting.value = false
+    }
+  }
+
+  // Jika sebelumnya ada pesanan online unpaid namun user mengubah alamat/keranjang/metode,
+  // batalkan pesanan lama terlebih dahulu agar stok segera dikembalikan.
+  if (hasPendingOnlineOrder.value && activeOrder.value?.order_code) {
+    try {
+      await cancelOrder(activeOrder.value.order_code)
+    } catch {
+      // Lanjutkan pembuatan pesanan baru jika pesanan lama sudah tidak aktif
+    }
+    activeOrder.value = null
+    activePayment.value = null
+    pendingOrderFingerprint.value = ''
+  }
 
   const cleanDistrict = buyer.value.district === NO_DETAIL ? null : buyer.value.district
   const cleanPostal = buyer.value.postalCode === NO_DETAIL ? null : buyer.value.postalCode
@@ -368,8 +482,16 @@ async function submitCheckout() {
     activeOrder.value = result.order || result
     activePayment.value = result.payment || null
 
-    // Bersihkan keranjang lokal setelah order berhasil dibuat
-    cart.clearCart()
+    if (method.value === 'cod') {
+      // COD langsung diproses sehingga keranjang bisa dibersihkan segera
+      completedOrder.value = activeOrder.value
+      pendingOrderFingerprint.value = ''
+      cart.resetCart()
+    } else {
+      // Pembayaran online: biarkan keranjang utuh sampai transaksi benar-benar lunas
+      completedOrder.value = null
+      pendingOrderFingerprint.value = currentFingerprint
+    }
 
     // Buka modal instruksi pembayaran
     showPaymentModal.value = true
@@ -404,13 +526,62 @@ async function submitCheckout() {
     <h1 class="page-title">Checkout, Ongkir &amp; Pembayaran</h1>
     <p class="page-subtitle">Lengkapi alamat pengiriman untuk menghitung ongkir otomatis, lalu pilih COD Surabaya atau Pembayaran Online Midtrans.</p>
 
-    <div v-if="cart.items.length === 0 && !showPaymentModal" class="empty-state">
+    <div v-if="completedOrder && !showPaymentModal" class="surface-card checkout-completed-card">
+      <div class="completed-check-icon" aria-hidden="true">✓</div>
+      <h2>
+        {{ completedOrder.payment_method === 'cod'
+          ? 'Pesanan COD Surabaya Berhasil Dibuat!'
+          : 'Pembayaran Berhasil & Pesanan Diproses!'
+        }}
+      </h2>
+      <p>
+        Kode pesanan Anda: <strong>{{ completedOrder.order_code }}</strong> · Total
+        <strong>{{ formatRupiah(completedOrder.total_amount ?? completedOrder.total ?? 0) }}</strong>.
+      </p>
+      <div class="completed-actions">
+        <RouterLink
+          :to="{ name: 'order-track', query: { code: completedOrder.order_code } }"
+          class="button button-primary"
+        >
+          Lacak Status Pesanan →
+        </RouterLink>
+        <RouterLink to="/products" class="button button-outline">Belanja Produk Lainnya</RouterLink>
+      </div>
+    </div>
+
+    <div v-else-if="cart.items.length === 0 && !showPaymentModal" class="empty-state">
       <h2>Keranjang Anda masih kosong</h2>
       <p>Pilih produk terlebih dahulu di katalog kami sebelum melakukan checkout.</p>
       <RouterLink to="/products" class="button button-primary">Buka Katalog Produk</RouterLink>
     </div>
 
-    <div v-else class="checkout-layout">
+    <template v-else>
+      <div v-if="infoMessage" class="notice-message checkout-info-banner" role="status">{{ infoMessage }}</div>
+
+      <div v-if="hasPendingOnlineOrder && !showPaymentModal" class="pending-order-banner" role="status">
+        <div>
+          <strong>⏳ Menunggu Pembayaran: {{ activeOrder.order_code }}</strong>
+          <p>
+            Tagihan {{ formatRupiah(activeOrder.total_amount ?? activeOrder.total ?? 0) }} belum selesai dibayar.
+            Keranjang Anda tetap tersimpan — Anda dapat melanjutkan pembayaran, mengganti channel di bawah, atau membatalkan pesanan ini.
+          </p>
+        </div>
+        <div class="pending-banner-actions">
+          <button class="button button-primary" type="button" @click="showPaymentModal = true">
+            💳 Lanjutkan Pembayaran
+          </button>
+          <button
+            class="button button-outline"
+            type="button"
+            :disabled="isCancellingPending"
+            @click="handleCancelPendingOrder"
+          >
+            {{ isCancellingPending ? 'Membatalkan...' : '✕ Batalkan Pesanan' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="checkout-layout">
       <form class="surface-card checkout-form" novalidate @submit.prevent="submitCheckout">
         <h2>1. Informasi Penerima &amp; Alamat Tujuan</h2>
 
@@ -764,19 +935,80 @@ async function submitCheckout() {
           <small>Ongkir otomatis dihitung oleh server · Didukung Midtrans Gateway &amp; COD Surabaya</small>
         </div>
       </aside>
-    </div>
+      </div>
+    </template>
 
     <!-- Modal Instruksi Pembayaran (PPL-19 & PPL-20) -->
     <PaymentModal
       v-if="showPaymentModal && activeOrder && activePayment"
       :order="activeOrder"
       :payment="activePayment"
-      @close="showPaymentModal = false"
+      @close="handleClosePaymentModal"
+      @payment-success="handlePaymentSuccess"
     />
   </section>
 </template>
 
 <style scoped>
+.checkout-completed-card {
+  max-width: 560px;
+  margin: 1.5rem auto;
+  padding: 2rem;
+  text-align: center;
+}
+.completed-check-icon {
+  width: 56px;
+  height: 56px;
+  line-height: 56px;
+  border-radius: 50%;
+  background: #e6f7ec;
+  color: #1f8a42;
+  font-size: 1.85rem;
+  font-weight: 800;
+  margin: 0 auto 1rem;
+}
+.completed-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.checkout-info-banner {
+  margin-bottom: 1rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+.pending-order-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.pending-order-banner strong {
+  display: block;
+  color: #92400e;
+  margin-bottom: 0.25rem;
+}
+.pending-order-banner p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #78350f;
+  line-height: 1.45;
+  max-width: 640px;
+}
+.pending-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 .form-row {
   display: flex;
   gap: 1rem;

@@ -120,7 +120,7 @@ onMounted(() => {
     <div v-if="message" :class="['admin-alert-banner', messageType]">
       <AdminIcon :name="messageType === 'success' ? 'check' : 'alert-triangle'" :size="18" />
       <span>{{ message }}</span>
-      <button class="admin-alert-close" @click="message = ''">×</button>
+      <button type="button" class="admin-alert-close" aria-label="Tutup notifikasi" @click="message = ''">×</button>
     </div>
 
     <article class="admin-panel">
@@ -247,6 +247,7 @@ onMounted(() => {
                     :to="`/admin/products/${product.id}/edit`"
                     class="admin-icon-button"
                     title="Ubah Produk"
+                    :aria-label="`Ubah produk ${product.name}`"
                   >
                     <AdminIcon name="edit" :size="15" />
                   </RouterLink>
@@ -255,6 +256,7 @@ onMounted(() => {
                     :to="{ path: '/admin/inventory/incoming', query: { product_id: product.id } }"
                     class="admin-mini-link"
                     title="Catat barang masuk untuk produk ini"
+                    :aria-label="`Restock produk ${product.name}`"
                   >
                     Restock
                   </RouterLink>
@@ -270,6 +272,8 @@ onMounted(() => {
         <span>Menampilkan {{ products.length }} dari {{ meta.total }} produk</span>
         <div class="admin-pagination">
           <button
+            type="button"
+            aria-label="Halaman sebelumnya"
             :disabled="meta.current_page <= 1"
             @click="fetchProducts(meta.current_page - 1)"
           >
@@ -277,6 +281,8 @@ onMounted(() => {
           </button>
           <span class="pagination-page">{{ meta.current_page }} / {{ meta.last_page || 1 }}</span>
           <button
+            type="button"
+            aria-label="Halaman berikutnya"
             :disabled="meta.current_page >= meta.last_page"
             @click="fetchProducts(meta.current_page + 1)"
           >

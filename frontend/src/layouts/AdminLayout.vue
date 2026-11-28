@@ -22,7 +22,6 @@ const items = computed(() => [
     badge: pendingOrdersCount.value > 0 ? String(pendingOrdersCount.value) : null,
   },
   { label: 'Barang masuk', to: '/admin/inventory/incoming', icon: 'inventory' },
-  { label: 'Penjualan DoD', to: '/admin/sales/direct', icon: 'sales' },
   { label: 'Rekap Keuangan', to: '/admin/reports/monthly', icon: 'reports' },
   { label: 'Pengaturan toko', to: '/admin/settings', icon: 'settings' },
 ])

@@ -1,12 +1,15 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import ProductArtwork from '@/components/ProductArtwork.vue'
+import RatingStars from '@/components/RatingStars.vue'
 import { useCartStore } from '@/stores/cart'
 import { useUiStore } from '@/stores/ui'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const cart = useCartStore()
 const ui = useUiStore()
+const justAdded = ref(false)
+let addedTimer = null
 
 const variants = computed(() => (Array.isArray(props.product.variants) ? props.product.variants : []))
 
@@ -46,6 +49,7 @@ const stockPillClass = computed(() => {
 })
 
 const quickAddLabel = computed(() => {
+  if (justAdded.value) return '✓ Ditambahkan'
   if (stockCount.value > 0) return '＋ Keranjang'
   if (isPreorderProduct.value) return 'Pre-Order'
   return 'Stok Habis'
@@ -62,8 +66,17 @@ const bestSellerBadge = computed(() => {
 
 function addProduct() {
   if (!canQuickAdd.value) return
-  cart.addItem(props.product, 1, defaultVariant.value)
+  const added = cart.addItem(props.product, 1, defaultVariant.value)
+  if (added) {
+    justAdded.value = true
+    if (addedTimer) clearTimeout(addedTimer)
+    addedTimer = setTimeout(() => { justAdded.value = false }, 1400)
+  }
 }
+
+onBeforeUnmount(() => {
+  if (addedTimer) clearTimeout(addedTimer)
+})
 </script>
 
 <template>
@@ -73,7 +86,7 @@ function addProduct() {
         <span v-if="bestSellerBadge" class="product-badge-best-seller">{{ bestSellerBadge }}</span>
         <span v-if="product.tag" class="product-tag" :class="{ 'tag-outline': product.tag === 'COD SURABAYA' }">{{ product.tag }}</span>
       </div>
-      <img v-if="product.image_url || product.image" :src="product.image_url || product.image" :alt="product.name" class="product-card-image" loading="lazy" />
+      <img v-if="product.image_url || product.image" :src="product.image_url || product.image" :alt="product.name" class="product-card-image" width="320" height="320" loading="lazy" decoding="async" />
       <ProductArtwork v-else :type="product.art" />
     </div>
     <div class="product-meta">{{ product.code }}</div>
@@ -81,7 +94,10 @@ function addProduct() {
     <div class="product-stock-pill-row">
       <span class="stock-pill" :class="stockPillClass">{{ stockBadgeText }}</span>
     </div>
-    <div class="product-rating"><span>★★★★★</span> {{ product.rating }} ({{ product.reviewCount }} {{ product.reviewLabel || 'Ulasan' }})</div>
+    <div class="product-rating">
+      <RatingStars :model-value="Number(product.rating || 0)" size="0.95rem" />
+      <span>{{ product.rating || '—' }} ({{ product.reviewCount ?? 0 }} {{ product.reviewLabel || 'Ulasan' }})</span>
+    </div>
     <button class="review-link" type="button" @click="ui.openModal('review', { product })">Lihat ulasan pelanggan</button>
     <div class="product-price">{{ product.priceLabel }}</div>
     <RouterLink v-if="product.type === 'service'" to="/consultation" class="product-action">Konsultasi Jadwal</RouterLink>

@@ -103,10 +103,10 @@ class StoreSettingsController extends Controller
     {
         return [
             'store_name' => $settings->store_name,
-            'store_tagline' => $settings->store_tagline,
+            'store_tagline' => (string) ($settings->store_tagline ?? ''),
             'store_logo' => $settings->store_logo,
-            'store_address' => $settings->store_address,
-            'operational_hours' => $settings->operational_hours,
+            'store_address' => (string) ($settings->store_address ?? ''),
+            'operational_hours' => (string) ($settings->operational_hours ?? ''),
             'whatsapp_number' => $publicView && ! $settings->is_whatsapp_active ? null : $settings->whatsapp_number,
             'whatsapp_default_message' => $settings->whatsapp_default_message,
             'is_whatsapp_active' => $settings->is_whatsapp_active,

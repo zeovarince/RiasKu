@@ -12,6 +12,7 @@ use App\Models\ZonaPengiriman;
 use App\Services\MidtransService;
 use App\Services\OrderStatusService;
 use App\Services\ShippingCostService;
+use App\Support\SqlSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +34,7 @@ class OrderController extends Controller
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('search'))) {
-            $query->where('order_code', 'like', "%{$search}%");
+            $query->where('order_code', SqlSearch::operator($query), SqlSearch::pattern($search));
         }
 
         if ($status = trim((string) $request->query('status'))) {
@@ -87,8 +88,10 @@ class OrderController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, bool $requireShippingZone = false): JsonResponse
     {
+        $mustRequireZone = $requireShippingZone && ZonaPengiriman::query()->where('is_active', true)->exists();
+
         $validated = $request->validate([
             'customer_name' => ['required', 'string', 'max:150'],
             'customer_phone' => ['required', 'string', 'max:30'],
@@ -96,9 +99,15 @@ class OrderController extends Controller
             'shipping_city' => ['required', 'string', 'max:100'],
             'shipping_district' => ['nullable', 'string', 'max:100'],
             'shipping_postal_code' => ['nullable', 'string', 'max:20'],
-            'destination_zone_id' => ['nullable', 'integer', 'exists:zona_pengiriman,id'],
-            'courier' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
-            'service' => ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
+            'destination_zone_id' => $mustRequireZone
+                ? ['required', 'integer', 'exists:zona_pengiriman,id']
+                : ['nullable', 'integer', 'exists:zona_pengiriman,id'],
+            'courier' => $mustRequireZone
+                ? ['required', 'string', 'max:100']
+                : ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
+            'service' => $mustRequireZone
+                ? ['required', 'string', 'max:100']
+                : ['nullable', 'string', 'max:100', 'required_with:destination_zone_id'],
             'payment_method' => ['required', 'string', 'in:cod,online'],
             'payment_channel' => ['required', 'string', 'max:50'],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -132,10 +141,22 @@ class OrderController extends Controller
             ], 422);
         }
 
-        // PPL-20: Validasi Ketat COD Khusus Kota Surabaya
+        // PPL-20: Validasi Ketat COD Khusus Kota Surabaya (exact match setelah normalisasi prefiks Kota/Kabupaten)
         if ($validated['payment_method'] === 'cod') {
-            $city = strtolower(trim($validated['shipping_city']));
-            if (! str_contains($city, 'surabaya')) {
+            $normalizeCity = static function (string $value): string {
+                $cleaned = strtolower(trim($value));
+                $cleaned = (string) preg_replace('/^(kota|kabupaten|kab\.?)\s+/i', '', $cleaned);
+
+                return trim((string) preg_replace('/\s+/', ' ', $cleaned));
+            };
+
+            $city = $normalizeCity($validated['shipping_city']);
+            $allowedCodCities = array_values(array_filter(array_map(
+                $normalizeCity,
+                (array) config('shipping.cod_cities', ['Surabaya'])
+            )));
+
+            if (! in_array($city, $allowedCodCities, true)) {
                 return response()->json([
                     'message' => 'Metode pembayaran COD hanya tersedia untuk pengiriman wilayah Kota Surabaya.',
                     'errors' => [
@@ -407,17 +428,31 @@ class OrderController extends Controller
                 $isCod ? 'Pesanan COD Surabaya dibuat dan sedang diproses.' : 'Pesanan dibuat, menunggu pembayaran.',
             );
 
-            // Bersihkan keranjang belanja
-            $cart = Keranjang::where('pelanggan_id', $user->id)->first();
-            if ($cart) {
-                $cart->items()->delete();
+            // Bersihkan keranjang belanja segera hanya untuk COD (pembayaran online dikosongkan setelah lunas)
+            if ($isCod) {
+                $cart = Keranjang::where('pelanggan_id', $user->id)->first();
+                if ($cart) {
+                    $cart->items()->delete();
+                }
             }
 
             return [$order, $channel, $isCod];
         }, 3);
 
         // Inisiasi Pembayaran (PPL-19 Midtrans Dual-Mode / COD) di luar DB::transaction agar lock tidak tertahan HTTP eksternal
-        $chargeResult = $this->midtransService->charge($order, $channel);
+        try {
+            $chargeResult = $this->midtransService->charge($order, $channel);
+        } catch (\RuntimeException $e) {
+            $order->load(array_merge(OrderStatusService::orderRelations(true), ['zona']));
+
+            return response()->json([
+                'message' => $e->getMessage(),
+                'data' => [
+                    'order' => $order,
+                    'payment' => null,
+                ],
+            ], 502);
+        }
 
         $payment = Pembayaran::create([
             'pesanan_id' => $order->id,
@@ -446,6 +481,8 @@ class OrderController extends Controller
                 'order' => $order,
                 'payment' => array_merge($payment->toArray(), [
                     'instructions' => $chargeResult['instructions'] ?? [],
+                    'midtrans_mode' => $chargeResult['midtrans_mode'] ?? ($isCod ? 'cod' : $this->midtransService->mode()),
+                    'can_simulate' => $isCod ? false : ($chargeResult['can_simulate'] ?? $this->midtransService->canSimulate()),
                 ]),
             ],
         ], 201);
@@ -471,9 +508,78 @@ class OrderController extends Controller
             ], 404);
         }
 
+        if ($order->latestPembayaran) {
+            $latestPay = $order->latestPembayaran;
+            $latestPay->setAttribute(
+                'instructions',
+                $this->midtransService->instructionsForPayment($latestPay, $order, $order->payment_channel)
+            );
+            $latestPay->setAttribute(
+                'midtrans_mode',
+                $order->isCodOrder()
+                    ? 'cod'
+                    : ($latestPay->payload_response['mode'] ?? $this->midtransService->mode())
+            );
+            $latestPay->setAttribute(
+                'can_simulate',
+                $order->isCodOrder() ? false : $this->midtransService->canSimulate()
+            );
+        }
+
         return response()->json([
             'message' => 'Detail pesanan berhasil dimuat.',
             'data' => $order,
+        ]);
+    }
+
+    public function cancel(Request $request, int|string $id): JsonResponse
+    {
+        $customer = $request->user();
+        $order = Pesanan::query()
+            ->where('pelanggan_id', $customer->id)
+            ->where(function ($sub) use ($id): void {
+                if (is_numeric($id)) {
+                    $sub->where('id', (int) $id)->orWhere('order_code', (string) $id);
+                } else {
+                    $sub->where('order_code', (string) $id);
+                }
+            })
+            ->with('latestPembayaran')
+            ->first();
+
+        if (! $order) {
+            return response()->json([
+                'message' => 'Pesanan tidak ditemukan.',
+            ], 404);
+        }
+
+        if ($order->isCodOrder()) {
+            return response()->json([
+                'message' => 'Pesanan COD yang sedang diproses hanya dapat dibatalkan melalui Admin RiasKu.',
+            ], 422);
+        }
+
+        if ($order->resolvedOrderStatus() !== 'menunggu_pembayaran' || $order->resolvedPaymentStatus() === 'dibayar') {
+            return response()->json([
+                'message' => 'Hanya pesanan yang masih menunggu pembayaran yang dapat dibatalkan.',
+            ], 422);
+        }
+
+        $updated = $this->orderStatusService->transition($order, 'dibatalkan', [
+            'actor_type' => 'pelanggan',
+            'actor_id' => $customer->id,
+            'actor_name' => $customer->username ?? $order->customer_name ?? 'Pelanggan',
+            'payment_status' => 'batal',
+            'note' => 'Pesanan dibatalkan oleh pelanggan sebelum pembayaran selesai.',
+        ]);
+
+        if ($order->latestPembayaran && $order->latestPembayaran->transaction_status === 'pending') {
+            $order->latestPembayaran->update(['transaction_status' => 'cancel']);
+        }
+
+        return response()->json([
+            'message' => "Pesanan {$updated->order_code} berhasil dibatalkan dan stok produk telah dikembalikan.",
+            'data' => $updated,
         ]);
     }
 

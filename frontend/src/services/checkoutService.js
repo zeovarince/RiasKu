@@ -39,3 +39,8 @@ export async function completeOrder(idOrCode) {
   const response = await api.post(`/orders/${encodeURIComponent(idOrCode)}/complete`)
   return response.data
 }
+
+export async function cancelOrder(idOrCode) {
+  const response = await api.post(`/orders/${encodeURIComponent(idOrCode)}/cancel`)
+  return response.data
+}

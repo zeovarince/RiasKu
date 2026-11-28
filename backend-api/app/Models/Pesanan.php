@@ -98,11 +98,11 @@ class Pesanan extends Model
         if (! $this->isDirty('courier') && empty($this->courier) && ! empty($this->shipping_courier)) {
             $this->courier = $this->shipping_courier;
         } elseif (! $this->isDirty('shipping_courier') && empty($this->shipping_courier) && ! empty($this->courier)) {
-            $this->shipping_courier = trim($this->courier.' '.($this->courier_service ?? ''));
+            $this->shipping_courier = self::formatCourierWithService((string) $this->courier, $this->courier_service);
         } elseif ($this->isDirty('shipping_courier') && ! $this->isDirty('courier') && ! empty($this->shipping_courier)) {
             $this->courier = $this->shipping_courier;
         } elseif ($this->isDirty('courier') && ! $this->isDirty('shipping_courier') && ! empty($this->courier)) {
-            $this->shipping_courier = trim($this->courier.' '.($this->courier_service ?? ''));
+            $this->shipping_courier = self::formatCourierWithService((string) $this->courier, $this->courier_service);
         }
 
         if ($this->isDirty('total_product_amount') && $this->total_product_amount !== null) {
@@ -154,6 +154,21 @@ class Pesanan extends Model
         } elseif (empty($this->{$primary}) && ! empty($this->{$legacy})) {
             $this->{$primary} = $this->{$legacy};
         }
+    }
+
+    private static function formatCourierWithService(string $courier, ?string $service): string
+    {
+        $cleanCourier = trim($courier);
+        $cleanService = trim((string) $service);
+
+        if (
+            $cleanService === ''
+            || preg_match('/(?:^|\s)'.preg_quote($cleanService, '/').'(?:\s|$|\()/i', $cleanCourier) === 1
+        ) {
+            return $cleanCourier;
+        }
+
+        return trim($cleanCourier.' '.$cleanService);
     }
 
     public function resolvedPaymentStatus(): string

@@ -17,6 +17,6 @@ class KategoriController extends Controller
         return response()->json([
             'message' => 'Daftar kategori berhasil dimuat.',
             'data' => $categories,
-        ]);
+        ])->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     }
 }

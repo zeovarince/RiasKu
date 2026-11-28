@@ -9,6 +9,11 @@ class StoreSettingsSeeder extends Seeder
 {
     public function run(): void
     {
-        StoreSettings::query()->firstOrCreate(['id' => 1], StoreSettings::defaults());
+        $settings = StoreSettings::query()->firstOrCreate(['id' => 1], StoreSettings::defaults());
+
+        $settings->update([
+            'whatsapp_number' => '6285156064912',
+            'is_whatsapp_active' => true,
+        ]);
     }
 }

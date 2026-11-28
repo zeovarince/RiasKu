@@ -12,7 +12,8 @@ export async function getPaymentStatus(paymentId) {
 
 export async function simulatePaymentSuccess(paymentId) {
   const response = await api.post(`/payments/${paymentId}/simulate-pay`)
-  return response.data.data ?? response.data
+  const payload = response.data?.data ?? response.data ?? {}
+  return { ...payload, message: response.data?.message || payload.message }
 }
 
 /**
@@ -23,5 +24,6 @@ export async function simulatePaymentSuccess(paymentId) {
  */
 export async function syncPaymentStatus(orderNumber) {
   const response = await api.post(`/payments/${encodeURIComponent(orderNumber)}/sync-status`)
-  return response.data.data ?? response.data
+  const payload = response.data?.data ?? response.data ?? {}
+  return { ...payload, message: response.data?.message || payload.message }
 }

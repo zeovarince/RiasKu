@@ -37,7 +37,7 @@ onMounted(() => cart.hydrateCart())
       <div class="cart-list">
         <article v-for="item in cart.items" :key="item.cartKey" class="cart-row">
           <div class="cart-product-art">
-            <img v-if="item.image_url || item.image" :src="item.image_url || item.image" :alt="item.name" />
+            <img v-if="item.image_url || item.image" :src="item.image_url || item.image" :alt="item.name" width="72" height="72" loading="lazy" decoding="async" />
             <ProductArtwork v-else :type="item.art || 'cushion'" />
           </div>
           <div class="cart-product-info">
