@@ -10,8 +10,156 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" />
     <title>RiasKu — Beauty & Makeup Studio</title>
+    <style id="riasku-preloader-style">
+      .riasku-preloader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 50% 42%, rgba(250, 218, 221, 0.72) 0%, rgba(255, 249, 247, 0.96) 56%, #fff9f7 100%);
+        color: #4a2c35;
+        transition:
+          transform 0.48s cubic-bezier(0.23, 1, 0.32, 1),
+          opacity 0.38s cubic-bezier(0.23, 1, 0.32, 1);
+      }
+      .riasku-preloader.is-exiting {
+        transform: translateY(-100%);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .riasku-preloader-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 24px;
+        transition:
+          transform 0.32s cubic-bezier(0.23, 1, 0.32, 1),
+          opacity 0.26s cubic-bezier(0.23, 1, 0.32, 1);
+      }
+      .riasku-preloader.is-exiting .riasku-preloader-inner {
+        transform: translateY(-14px) scale(0.98);
+        opacity: 0;
+      }
+      .riasku-preloader-mark {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: clamp(34px, 5vw, 48px);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        color: #4a2c35;
+      }
+      .riasku-preloader-mark span {
+        color: #9c4a63;
+      }
+      .riasku-preloader-sub {
+        margin-top: 8px;
+        font-family: 'Space Mono', monospace;
+        font-size: 10px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: #8c6672;
+      }
+      .riasku-preloader-track {
+        position: relative;
+        width: 148px;
+        height: 2px;
+        margin-top: 22px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(156, 74, 99, 0.16);
+      }
+      .riasku-preloader-track::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 56%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, #9c4a63, #eba9b8);
+        transform: translateX(-110%);
+      }
+      .riasku-preloader-progress {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .riasku-preloader-inner {
+          animation: riasku-loader-enter 0.42s cubic-bezier(0.23, 1, 0.32, 1) both;
+        }
+        .riasku-preloader-track::after {
+          animation: riasku-loader-sweep 1.15s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .riasku-preloader {
+          transition: opacity 0.2s ease-out;
+        }
+        .riasku-preloader.is-exiting {
+          transform: none;
+          opacity: 0;
+        }
+        .riasku-preloader.is-exiting .riasku-preloader-inner {
+          transform: none;
+        }
+        .riasku-preloader-track::after {
+          width: 100%;
+          transform: none;
+          opacity: 0.65;
+        }
+      }
+      @keyframes riasku-loader-enter {
+        from {
+          opacity: 0;
+          transform: translateY(10px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      @keyframes riasku-loader-sweep {
+        from {
+          transform: translateX(-115%);
+        }
+        to {
+          transform: translateX(225%);
+        }
+      }
+    </style>
   </head>
   <body>
+    <div
+      id="riasku-preloader"
+      class="riasku-preloader"
+      role="status"
+      aria-live="polite"
+      aria-label="Memuat RiasKu"
+    >
+      <div class="riasku-preloader-inner">
+        <div class="riasku-preloader-mark">RiasKu<span>.</span></div>
+        <div class="riasku-preloader-sub">Beauty &amp; Makeup Studio</div>
+        <div class="riasku-preloader-track" aria-hidden="true"></div>
+        <progress class="riasku-preloader-progress" aria-label="Memuat halaman RiasKu"></progress>
+      </div>
+    </div>
+    <script>
+      window.__RIASKU_BOOT_START__ = performance.now();
+      window.setTimeout(function () {
+        var el = document.getElementById('riasku-preloader');
+        if (el && !el.dataset.dismissed) {
+          el.dataset.dismissed = 'true';
+          el.classList.add('is-exiting');
+          document.documentElement.dataset.appReady = 'true';
+          window.setTimeout(function () { el.remove(); }, 520);
+        }
+      }, 2400);
+    </script>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

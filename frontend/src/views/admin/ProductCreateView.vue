@@ -1,9 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminPageHeader from './AdminPageHeader.vue'
 import AdminIcon from '@/components/admin/AdminIcon.vue'
+import BarcodeScannerModal from '@/components/admin/BarcodeScannerModal.vue'
 import { adminService } from '@/services/adminService'
+import { useHardwareBarcodeScanner } from '@/composables/useHardwareBarcodeScanner'
+import { useCameraBarcodeScanner } from '@/composables/useCameraBarcodeScanner'
+import { generateRandomSkuSuffix, generateSkuFromName } from '@/utils/skuGenerator'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +28,7 @@ const form = ref({
   kategori_id: '',
   brand: '',
   sku: '',
+  barcode: '',
   weight_grams: 50,
   base_price: '',
   retail_price: '',
@@ -38,6 +43,213 @@ const form = ref({
   is_active: true,
   min_stock: 5,
   initial_stock: 0,
+})
+
+// Auto-SKU & Barcode Scanner state
+const skuManuallyEdited = ref(false)
+const cameraScannerOpen = ref(false)
+const hardwareScannerEnabled = ref(true)
+const barcodeLookingUp = ref(false)
+const barcodeStatus = ref(null) // null | { tone, title, detail, source }
+const existingBarcodeProduct = ref(null)
+const externalPreviewUrl = ref('')
+const detectedBpomInfo = ref(null) // null | { number, url }
+const bpomCopied = ref(false)
+const quickPhotoBarcodeInputRef = ref(null)
+const decodingBarcodePhoto = ref(false)
+const barcodeFlash = ref(false)
+
+const { decodeImageFile } = useCameraBarcodeScanner()
+
+watch(
+  () => form.value.name,
+  (newName) => {
+    if (!isEdit.value && !skuManuallyEdited.value) {
+      form.value.sku = generateSkuFromName(newName)
+    }
+  },
+)
+
+function handleSkuManualInput() {
+  if (!form.value.sku.trim()) {
+    skuManuallyEdited.value = false
+    return
+  }
+  skuManuallyEdited.value = true
+}
+
+function regenerateSkuFromName() {
+  if (!form.value.name.trim()) {
+    globalError.value = 'Isi Nama Produk terlebih dahulu agar SKU dapat digenerate otomatis.'
+    return
+  }
+  const baseCandidate = generateSkuFromName(form.value.name)
+  const nextSku =
+    form.value.sku === baseCandidate
+      ? generateSkuFromName(form.value.name, generateRandomSkuSuffix())
+      : baseCandidate
+  form.value.sku = nextSku
+  skuManuallyEdited.value = false
+}
+
+function triggerBarcodeFlash() {
+  barcodeFlash.value = true
+  window.setTimeout(() => {
+    barcodeFlash.value = false
+  }, 900)
+}
+
+async function copyDetectedBpom() {
+  if (!detectedBpomInfo.value?.number) return
+  try {
+    await navigator.clipboard.writeText(detectedBpomInfo.value.number)
+    bpomCopied.value = true
+    window.setTimeout(() => {
+      bpomCopied.value = false
+    }, 1800)
+  } catch {
+    bpomCopied.value = false
+  }
+}
+
+async function handleBarcodeDetected(rawCode, source = 'manual') {
+  const code = String(rawCode || '').trim()
+  if (!code) return
+
+  form.value.barcode = code
+  existingBarcodeProduct.value = null
+  externalPreviewUrl.value = ''
+  detectedBpomInfo.value = null
+  bpomCopied.value = false
+  barcodeLookingUp.value = true
+  barcodeStatus.value = null
+  triggerBarcodeFlash()
+
+  const sourceLabel =
+    source === 'camera'
+      ? 'Kamera'
+      : source === 'photo'
+        ? 'Foto Barcode'
+        : source === 'hardware'
+          ? 'Scanner USB/Bluetooth'
+          : 'Input Manual'
+
+  const providerLabelMap = {
+    open_beauty_facts: 'Open Beauty Facts',
+    open_products_facts: 'Open Products Facts',
+    upcitemdb: 'UPCitemdb',
+  }
+
+  try {
+    const res = await adminService.lookupProductByBarcode(code)
+    const data = res.data?.data || {}
+
+    if (data.status === 'existing_local' && data.product) {
+      existingBarcodeProduct.value = data.product
+      barcodeStatus.value = {
+        tone: 'warning',
+        title: `Produk sudah terdaftar (${sourceLabel})`,
+        detail: `Kode "${code}" cocok dengan produk "${data.product.name}". Anda bisa langsung menambah stok masuk atau mengubah detail produknya.`,
+      }
+      return
+    }
+
+    if (data.status === 'bpom_detected' && data.bpom_number) {
+      form.value.bpom_number = data.bpom_number
+      form.value.barcode = ''
+      detectedBpomInfo.value = {
+        number: data.bpom_number,
+        url: data.cekbpom_url || 'https://cekbpom.pom.go.id/',
+      }
+      barcodeStatus.value = {
+        tone: 'info',
+        title: `QR BPOM Terdeteksi: ${data.bpom_number} (${sourceLabel})`,
+        detail:
+          'Kolom Nomor BPOM sudah terisi otomatis. Anda dapat menyalin nomor ini ke Cek BPOM RI untuk melihat nama/merek resmi, atau scan barcode garis 1D (899...) di kemasan untuk mencoba isi otomatis nama & merek.',
+      }
+      return
+    }
+
+    if (data.status === 'external_found' && data.suggestion) {
+      const s = data.suggestion
+      const providerLabel = providerLabelMap[data.source] || 'database produk eksternal'
+      if (s.name) form.value.name = s.name
+      if (s.brand) form.value.brand = s.brand
+      if (s.weight_grams) form.value.weight_grams = Number(s.weight_grams)
+      if (s.short_ingredients) form.value.short_ingredients = s.short_ingredients
+      if (s.description && !form.value.description) form.value.description = s.description
+      if (s.suggested_category_id && !form.value.kategori_id) {
+        form.value.kategori_id = s.suggested_category_id
+      }
+      if (s.suggested_sku && !skuManuallyEdited.value) {
+        form.value.sku = s.suggested_sku
+      } else if (s.name && !skuManuallyEdited.value) {
+        form.value.sku = generateSkuFromName(s.name)
+      }
+      externalPreviewUrl.value = s.image_preview_url || ''
+      barcodeStatus.value = {
+        tone: 'success',
+        title: `Data produk terisi otomatis dari ${providerLabel} (${sourceLabel})`,
+        detail:
+          'Nama, merek, berat, dan info produk ditemukan otomatis. Silakan periksa kembali lalu lengkapi kategori, harga modal/eceran, dan stok awal.',
+      }
+      return
+    }
+
+    barcodeStatus.value = {
+      tone: 'info',
+      title: `Barcode "${code}" tercatat (${sourceLabel})`,
+      detail:
+        'Barcode belum ditemukan di DB lokal, Open Beauty Facts, Open Products Facts, maupun UPCitemdb. Kode sudah tersimpan untuk restock ke depan — silakan isi nama produk (SKU akan terisi otomatis).',
+    }
+  } catch (err) {
+    barcodeStatus.value = {
+      tone: 'danger',
+      title: 'Gagal mencari data barcode',
+      detail:
+        err.response?.data?.message ||
+        'Kode barcode tetap tercatat di kolom input. Anda tetap dapat mengisi formulir secara manual.',
+    }
+  } finally {
+    barcodeLookingUp.value = false
+  }
+}
+
+async function handleQuickBarcodePhoto(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  decodingBarcodePhoto.value = true
+  barcodeStatus.value = null
+  try {
+    const result = await decodeImageFile(file)
+    if (!result?.barcode) {
+      barcodeStatus.value = {
+        tone: 'danger',
+        title: 'Barcode tidak terbaca dari foto',
+        detail:
+          'Pastikan garis barcode terlihat jelas, fokus, dan tidak terpotong, lalu coba foto ulang atau ketik manual.',
+      }
+      return
+    }
+    await handleBarcodeDetected(result.barcode, 'photo')
+  } catch {
+    barcodeStatus.value = {
+      tone: 'danger',
+      title: 'Gagal memproses foto barcode',
+      detail: 'Coba pilih foto lain dengan format JPG/PNG yang lebih tajam.',
+    }
+  } finally {
+    decodingBarcodePhoto.value = false
+  }
+}
+
+useHardwareBarcodeScanner({
+  enabled: computed(() => hardwareScannerEnabled.value && !cameraScannerOpen.value),
+  onScan: (code) => {
+    handleBarcodeDetected(code, 'hardware')
+  },
 })
 
 // Custom variants toggle & list
@@ -111,6 +323,7 @@ async function loadProduct() {
       kategori_id: p.kategori_id || '',
       brand: p.brand || '',
       sku: p.sku || '',
+      barcode: p.barcode || '',
       weight_grams: p.weight_grams || 50,
       base_price: p.base_price || '',
       retail_price: p.retail_price || '',
@@ -126,6 +339,7 @@ async function loadProduct() {
       min_stock: p.min_stock !== undefined && p.min_stock !== null ? p.min_stock : 5,
       initial_stock: p.total_stock || 0,
     }
+    skuManuallyEdited.value = Boolean(p.sku)
 
     const activeVarians = (p.varians || []).filter((v) => v.is_active !== false)
     if (activeVarians.length > 0) {
@@ -244,6 +458,7 @@ async function saveProduct() {
     kategori_id: form.value.kategori_id,
     brand: form.value.brand,
     sku: form.value.sku || null,
+    barcode: form.value.barcode || null,
     weight_grams: Number(form.value.weight_grams),
     base_price: Number(form.value.base_price),
     retail_price: Number(form.value.retail_price),
@@ -354,6 +569,150 @@ onMounted(() => {
 
     <form class="admin-form-layout" @submit.prevent="saveProduct">
       <div class="admin-form-main">
+        <!-- 0. Scan Barcode Cepat (Kamera, Foto, atau Alat Scanner USB/Bluetooth) -->
+        <article class="admin-panel admin-form-panel barcode-assist-panel" :class="{ 'is-flash': barcodeFlash }">
+          <div class="admin-panel-heading barcode-assist-heading">
+            <div>
+              <h2>
+                <AdminIcon name="barcode" :size="18" />
+                Scan Barcode &amp; Isi Otomatis <span class="optional-tag">Opsional</span>
+              </h2>
+              <p>
+                Arahkan alat scanner USB/Bluetooth, scan lewat kamera laptop/HP, atau foto barcode kemasan untuk mengisi data produk lebih cepat.
+              </p>
+            </div>
+            <label class="usb-scanner-toggle">
+              <input v-model="hardwareScannerEnabled" type="checkbox" />
+              <span class="usb-status-dot" :class="{ active: hardwareScannerEnabled }"></span>
+              <span>{{ hardwareScannerEnabled ? 'Scanner USB/BT Siap' : 'Scanner USB/BT Nonaktif' }}</span>
+            </label>
+          </div>
+
+          <div class="barcode-controls-row">
+            <div class="barcode-input-group">
+              <input
+                v-model="form.barcode"
+                data-barcode-input="true"
+                type="text"
+                inputmode="text"
+                placeholder="Scan atau ketik Barcode EAN-13 / UPC (contoh: 8993137701234)"
+                aria-label="Kode Barcode Produk"
+                :class="{ 'is-invalid': errors.barcode }"
+                @keydown.enter.prevent="handleBarcodeDetected(form.barcode, 'manual')"
+              />
+              <button
+                type="button"
+                class="admin-btn admin-btn-outline"
+                :disabled="!form.barcode.trim() || barcodeLookingUp"
+                @click="handleBarcodeDetected(form.barcode, 'manual')"
+              >
+                <AdminIcon name="search" :size="15" />
+                {{ barcodeLookingUp ? 'Mencari...' : 'Cari Data' }}
+              </button>
+            </div>
+
+            <div class="barcode-action-buttons">
+              <button
+                type="button"
+                class="admin-btn admin-btn-primary"
+                @click="cameraScannerOpen = true"
+              >
+                <AdminIcon name="camera" :size="16" />
+                Scan Kamera
+              </button>
+
+              <input
+                ref="quickPhotoBarcodeInputRef"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                class="sr-only-input"
+                @change="handleQuickBarcodePhoto"
+              />
+              <button
+                type="button"
+                class="admin-btn admin-btn-outline"
+                :disabled="decodingBarcodePhoto"
+                @click="quickPhotoBarcodeInputRef?.click()"
+              >
+                <AdminIcon name="barcode" :size="16" />
+                {{ decodingBarcodePhoto ? 'Membaca Foto...' : 'Foto Barcode' }}
+              </button>
+            </div>
+          </div>
+          <small v-if="errors.barcode" class="admin-error-text">{{ errors.barcode[0] }}</small>
+
+          <div
+            v-if="barcodeStatus"
+            class="barcode-result-card"
+            :class="`tone-${barcodeStatus.tone}`"
+            role="status"
+          >
+            <div class="barcode-result-body">
+              <img
+                v-if="externalPreviewUrl"
+                :src="externalPreviewUrl"
+                alt="Pratinjau produk dari barcode"
+                class="barcode-preview-thumb"
+                width="52"
+                height="52"
+              />
+              <div class="barcode-result-copy">
+                <strong>{{ barcodeStatus.title }}</strong>
+                <p>{{ barcodeStatus.detail }}</p>
+              </div>
+            </div>
+
+            <div v-if="detectedBpomInfo" class="barcode-existing-actions">
+              <span class="barcode-existing-meta">
+                Nomor BPOM otomatis terisi: <strong>{{ detectedBpomInfo.number }}</strong>
+              </span>
+              <div class="barcode-existing-buttons">
+                <button
+                  type="button"
+                  class="admin-btn admin-btn-outline"
+                  @click="copyDetectedBpom"
+                >
+                  <AdminIcon name="check" :size="15" />
+                  {{ bpomCopied ? 'Tersalin!' : 'Salin No. BPOM' }}
+                </button>
+                <a
+                  :href="detectedBpomInfo.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="admin-btn admin-btn-primary"
+                >
+                  <AdminIcon name="external" :size="15" />
+                  Cek di BPOM RI
+                </a>
+              </div>
+            </div>
+
+            <div v-if="existingBarcodeProduct" class="barcode-existing-actions">
+              <span class="barcode-existing-meta">
+                SKU: <strong>{{ existingBarcodeProduct.sku || '-' }}</strong> · Stok saat ini: <strong>{{ existingBarcodeProduct.total_stock ?? 0 }}</strong>
+              </span>
+              <div class="barcode-existing-buttons">
+                <RouterLink
+                  :to="{ path: '/admin/inventory/incoming', query: { product_id: existingBarcodeProduct.id } }"
+                  class="admin-btn admin-btn-primary"
+                >
+                  <AdminIcon name="plus" :size="15" />
+                  Tambah Stok Masuk
+                </RouterLink>
+                <button
+                  type="button"
+                  class="admin-btn admin-btn-outline"
+                  @click="router.push(`/admin/products/${existingBarcodeProduct.id}/edit`)"
+                >
+                  <AdminIcon name="edit" :size="15" />
+                  Ubah Produk Ini
+                </button>
+              </div>
+            </div>
+          </div>
+        </article>
+
         <!-- 1. Informasi Produk -->
         <article class="admin-panel admin-form-panel">
           <div class="admin-panel-heading">
@@ -404,12 +763,30 @@ onMounted(() => {
 
           <div class="admin-field-grid">
             <label class="admin-field">
-              SKU / Kode Produk
-              <input
-                v-model="form.sku"
-                placeholder="Contoh: RSK-CUSH-01"
-                :class="{ 'is-invalid': errors.sku }"
-              />
+              <span class="sku-label-row">
+                <span>SKU / Kode Produk</span>
+                <span v-if="!isEdit && !skuManuallyEdited && form.sku" class="sku-auto-badge">Otomatis</span>
+              </span>
+              <div class="sku-input-row">
+                <input
+                  v-model="form.sku"
+                  placeholder="Otomatis dari nama produk (contoh: RSK-DECU-01)"
+                  :class="{ 'is-invalid': errors.sku }"
+                  @input="handleSkuManualInput"
+                />
+                <button
+                  type="button"
+                  class="admin-btn admin-btn-outline sku-generate-btn"
+                  title="Generate SKU otomatis dari kombinasi huruf nama produk"
+                  @click="regenerateSkuFromName"
+                >
+                  <AdminIcon name="refresh" :size="14" />
+                  Generate
+                </button>
+              </div>
+              <small class="sku-helper-text">
+                Terisi otomatis dari kombinasi huruf nama produk, atau dapat diubah manual kapan saja.
+              </small>
               <small v-if="errors.sku" class="admin-error-text">{{ errors.sku[0] }}</small>
             </label>
 
@@ -792,6 +1169,12 @@ onMounted(() => {
         </button>
       </aside>
     </form>
+
+    <BarcodeScannerModal
+      :open="cameraScannerOpen"
+      @close="cameraScannerOpen = false"
+      @detected="(evt) => handleBarcodeDetected(evt.barcode, evt.source)"
+    />
   </section>
 </template>
 
@@ -944,5 +1327,206 @@ onMounted(() => {
 }
 .is-invalid {
   border-color: var(--admin-danger, #C53030) !important;
+}
+.barcode-assist-panel {
+  border-color: #e9cdd3;
+  background: linear-gradient(180deg, #fffdfb 0%, #fff7f8 100%);
+  transition: border-color 0.25s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.25s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.barcode-assist-panel.is-flash {
+  border-color: #2e8b6a;
+  box-shadow: 0 0 0 3px rgba(46, 139, 106, 0.16);
+}
+.barcode-assist-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.barcode-assist-heading h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.optional-tag {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9c4a63;
+  background: #fadadd;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.usb-scanner-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #e6cbd1;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a2c35;
+  cursor: pointer;
+  user-select: none;
+}
+.usb-scanner-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.usb-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c7b4b9;
+}
+.usb-status-dot.active {
+  background: #2e8b6a;
+  box-shadow: 0 0 0 3px rgba(46, 139, 106, 0.18);
+}
+.barcode-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.barcode-input-group {
+  flex: 1 1 300px;
+  display: flex;
+  gap: 8px;
+}
+.barcode-input-group input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--admin-border, #e8d2d7);
+  border-radius: var(--admin-radius-input, 12px);
+  background: #fff;
+  color: var(--admin-text, #4a2c35);
+  font-family: 'Space Mono', monospace;
+  font-size: 13px;
+}
+.barcode-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.barcode-result-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e8d2d7;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.barcode-result-card.tone-success {
+  border-color: #b7dfc9;
+  background: #f2fbf6;
+  color: #1f644b;
+}
+.barcode-result-card.tone-warning {
+  border-color: #ebd0a1;
+  background: #fffaf0;
+  color: #7c5218;
+}
+.barcode-result-card.tone-info {
+  border-color: #e4cad1;
+  background: #fff8fa;
+  color: #5b3a44;
+}
+.barcode-result-card.tone-danger {
+  border-color: #f0bcc4;
+  background: #fff3f5;
+  color: #9e2f44;
+}
+.barcode-result-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.barcode-preview-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(74, 44, 53, 0.14);
+  background: #fff;
+  flex: 0 0 auto;
+}
+.barcode-result-copy strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.barcode-result-copy p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.barcode-existing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(124, 82, 24, 0.25);
+}
+.barcode-existing-meta {
+  font-size: 12px;
+}
+.barcode-existing-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sku-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sku-auto-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #2e8b6a;
+  background: #e6f6ee;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sku-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.sku-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+.sku-generate-btn {
+  white-space: nowrap;
+  padding-inline: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sku-helper-text {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--admin-text-muted, #8a6f76);
+}
+.sr-only-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 </style>

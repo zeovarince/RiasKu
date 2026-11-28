@@ -29,6 +29,9 @@ const props = defineProps({ name: { type: String, required: true }, size: { type
     <template v-else-if="name === 'wallet'"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 14h2"/></template>
     <template v-else-if="name === 'package'"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9"/></template>
     <template v-else-if="name === 'alert-triangle'"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 9v5M12 17h.01"/></template>
+    <template v-else-if="name === 'barcode'"><path d="M3 5v14M7 5v14M10 5v14M14 5v14M17 5v14M21 5v14"/></template>
+    <template v-else-if="name === 'camera'"><path d="M4 8h3l2-3h6l2 3h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="14" r="3.5"/></template>
+    <template v-else-if="name === 'refresh'"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></template>
     <template v-else><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></template>
   </svg>
 </template>

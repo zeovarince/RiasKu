@@ -44,7 +44,9 @@ Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function (): void
     Route::get('/produk', [ProdukController::class, 'index']);
     Route::post('/produk', [ProdukController::class, 'store']);
 
-    // Best Seller (PPL-24) — harus berada sebelum route detail /produk/{produk}
+    // Lookup Barcode & Best Seller (PPL-24) — harus berada sebelum route detail /produk/{produk}
+    Route::get('/produk/lookup-barcode', [ProdukController::class, 'lookupBarcode']);
+    Route::get('/products/lookup-barcode', [ProdukController::class, 'lookupBarcode']);
     Route::get('/produk/best-sellers', [BestSellerController::class, 'index']);
     Route::get('/products/best-sellers', [BestSellerController::class, 'index']);
 

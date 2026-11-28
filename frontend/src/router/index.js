@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
@@ -74,6 +75,68 @@ router.beforeEach((to) => {
     return { name: 'admin-login', query: { redirect: to.fullPath } }
   }
   return true
+})
+
+let finishViewTransition = null
+let activeViewTransition = null
+
+function routeFocusToMainHeading() {
+  const heading = document.querySelector('main h1, main h2, .admin-page h1')
+  if (!(heading instanceof HTMLElement)) return
+  if (!heading.hasAttribute('tabindex')) {
+    heading.setAttribute('tabindex', '-1')
+  }
+  heading.focus({ preventScroll: true })
+}
+
+router.beforeResolve((to, from) => {
+  const isInitialLoad = !from.name
+  const isSamePath = to.path === from.path
+  const isAdminTransition = to.path.startsWith('/admin') || from.path.startsWith('/admin')
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+
+  if (
+    isInitialLoad ||
+    isSamePath ||
+    isAdminTransition ||
+    prefersReduced ||
+    typeof document === 'undefined' ||
+    typeof document.startViewTransition !== 'function'
+  ) {
+    return true
+  }
+
+  return new Promise((resolveNavigation) => {
+    activeViewTransition = document.startViewTransition(() => {
+      return new Promise((resolveDomUpdate) => {
+        finishViewTransition = resolveDomUpdate
+        resolveNavigation(true)
+      })
+    })
+  })
+})
+
+router.afterEach(async (to, from) => {
+  await nextTick()
+  if (finishViewTransition) {
+    const done = finishViewTransition
+    finishViewTransition = null
+    done()
+  }
+
+  if (from.name && to.path !== from.path) {
+    if (activeViewTransition?.finished) {
+      const currentTransition = activeViewTransition
+      activeViewTransition = null
+      currentTransition.finished.finally(() => {
+        routeFocusToMainHeading()
+      })
+    } else {
+      routeFocusToMainHeading()
+    }
+  }
 })
 
 export default router
