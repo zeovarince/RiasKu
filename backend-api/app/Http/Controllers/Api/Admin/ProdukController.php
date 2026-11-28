@@ -28,7 +28,8 @@ class ProdukController extends Controller
                 $q->where('name', $operator, $pattern)
                     ->orWhere('brand', $operator, $pattern)
                     ->orWhere('sku', $operator, $pattern)
-                    ->orWhere('barcode', $operator, $pattern);
+                    ->orWhere('barcode', $operator, $pattern)
+                    ->orWhere('bpom_number', $operator, $pattern);
             });
         }
 
@@ -74,9 +75,17 @@ class ProdukController extends Controller
 
         $result = $lookupService->lookup((string) $validated['barcode']);
 
+        $sourceLabel = match ($result['source'] ?? null) {
+            'open_beauty_facts' => 'Open Beauty Facts',
+            'open_products_facts' => 'Open Products Facts',
+            'upcitemdb' => 'UPCitemdb',
+            default => 'database eksternal',
+        };
+
         $message = match ($result['status']) {
-            'existing_local' => 'Produk dengan barcode/SKU tersebut sudah terdaftar di katalog RiasKu.',
-            'external_found' => 'Data produk ditemukan dari Open Beauty Facts. Silakan periksa dan lengkapi harga serta stok.',
+            'existing_local' => 'Produk dengan barcode/SKU/BPOM tersebut sudah terdaftar di katalog RiasKu.',
+            'bpom_detected' => 'QR 2D BPOM terdeteksi. Nomor BPOM telah diisi otomatis.',
+            'external_found' => "Data produk ditemukan dari {$sourceLabel}. Silakan periksa dan lengkapi harga serta stok.",
             default => 'Barcode belum terdaftar. Field barcode telah diisi otomatis untuk input produk baru.',
         };
 

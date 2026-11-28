@@ -53,6 +53,8 @@ const barcodeLookingUp = ref(false)
 const barcodeStatus = ref(null) // null | { tone, title, detail, source }
 const existingBarcodeProduct = ref(null)
 const externalPreviewUrl = ref('')
+const detectedBpomInfo = ref(null) // null | { number, url }
+const bpomCopied = ref(false)
 const quickPhotoBarcodeInputRef = ref(null)
 const decodingBarcodePhoto = ref(false)
 const barcodeFlash = ref(false)
@@ -97,6 +99,19 @@ function triggerBarcodeFlash() {
   }, 900)
 }
 
+async function copyDetectedBpom() {
+  if (!detectedBpomInfo.value?.number) return
+  try {
+    await navigator.clipboard.writeText(detectedBpomInfo.value.number)
+    bpomCopied.value = true
+    window.setTimeout(() => {
+      bpomCopied.value = false
+    }, 1800)
+  } catch {
+    bpomCopied.value = false
+  }
+}
+
 async function handleBarcodeDetected(rawCode, source = 'manual') {
   const code = String(rawCode || '').trim()
   if (!code) return
@@ -104,6 +119,8 @@ async function handleBarcodeDetected(rawCode, source = 'manual') {
   form.value.barcode = code
   existingBarcodeProduct.value = null
   externalPreviewUrl.value = ''
+  detectedBpomInfo.value = null
+  bpomCopied.value = false
   barcodeLookingUp.value = true
   barcodeStatus.value = null
   triggerBarcodeFlash()
@@ -117,6 +134,12 @@ async function handleBarcodeDetected(rawCode, source = 'manual') {
           ? 'Scanner USB/Bluetooth'
           : 'Input Manual'
 
+  const providerLabelMap = {
+    open_beauty_facts: 'Open Beauty Facts',
+    open_products_facts: 'Open Products Facts',
+    upcitemdb: 'UPCitemdb',
+  }
+
   try {
     const res = await adminService.lookupProductByBarcode(code)
     const data = res.data?.data || {}
@@ -126,13 +149,30 @@ async function handleBarcodeDetected(rawCode, source = 'manual') {
       barcodeStatus.value = {
         tone: 'warning',
         title: `Produk sudah terdaftar (${sourceLabel})`,
-        detail: `Barcode/SKU "${code}" cocok dengan produk "${data.product.name}". Anda bisa langsung menambah stok masuk atau mengubah detail produknya.`,
+        detail: `Kode "${code}" cocok dengan produk "${data.product.name}". Anda bisa langsung menambah stok masuk atau mengubah detail produknya.`,
+      }
+      return
+    }
+
+    if (data.status === 'bpom_detected' && data.bpom_number) {
+      form.value.bpom_number = data.bpom_number
+      form.value.barcode = ''
+      detectedBpomInfo.value = {
+        number: data.bpom_number,
+        url: data.cekbpom_url || 'https://cekbpom.pom.go.id/',
+      }
+      barcodeStatus.value = {
+        tone: 'info',
+        title: `QR BPOM Terdeteksi: ${data.bpom_number} (${sourceLabel})`,
+        detail:
+          'Kolom Nomor BPOM sudah terisi otomatis. Anda dapat menyalin nomor ini ke Cek BPOM RI untuk melihat nama/merek resmi, atau scan barcode garis 1D (899...) di kemasan untuk mencoba isi otomatis nama & merek.',
       }
       return
     }
 
     if (data.status === 'external_found' && data.suggestion) {
       const s = data.suggestion
+      const providerLabel = providerLabelMap[data.source] || 'database produk eksternal'
       if (s.name) form.value.name = s.name
       if (s.brand) form.value.brand = s.brand
       if (s.weight_grams) form.value.weight_grams = Number(s.weight_grams)
@@ -149,9 +189,9 @@ async function handleBarcodeDetected(rawCode, source = 'manual') {
       externalPreviewUrl.value = s.image_preview_url || ''
       barcodeStatus.value = {
         tone: 'success',
-        title: `Data produk terisi otomatis (${sourceLabel})`,
+        title: `Data produk terisi otomatis dari ${providerLabel} (${sourceLabel})`,
         detail:
-          'Nama, merek, berat, dan bahan produk ditemukan dari Open Beauty Facts. Silakan periksa kembali lalu lengkapi kategori, harga modal/eceran, dan stok awal.',
+          'Nama, merek, berat, dan info produk ditemukan otomatis. Silakan periksa kembali lalu lengkapi kategori, harga modal/eceran, dan stok awal.',
       }
       return
     }
@@ -160,7 +200,7 @@ async function handleBarcodeDetected(rawCode, source = 'manual') {
       tone: 'info',
       title: `Barcode "${code}" tercatat (${sourceLabel})`,
       detail:
-        'Produk belum tersedia di database lokal maupun Open Beauty Facts. Field barcode sudah diisi otomatis — silakan ketik nama produk (SKU akan terisi otomatis).',
+        'Barcode belum ditemukan di DB lokal, Open Beauty Facts, Open Products Facts, maupun UPCitemdb. Kode sudah tersimpan untuk restock ke depan — silakan isi nama produk (SKU akan terisi otomatis).',
     }
   } catch (err) {
     barcodeStatus.value = {
@@ -620,6 +660,31 @@ onMounted(() => {
               <div class="barcode-result-copy">
                 <strong>{{ barcodeStatus.title }}</strong>
                 <p>{{ barcodeStatus.detail }}</p>
+              </div>
+            </div>
+
+            <div v-if="detectedBpomInfo" class="barcode-existing-actions">
+              <span class="barcode-existing-meta">
+                Nomor BPOM otomatis terisi: <strong>{{ detectedBpomInfo.number }}</strong>
+              </span>
+              <div class="barcode-existing-buttons">
+                <button
+                  type="button"
+                  class="admin-btn admin-btn-outline"
+                  @click="copyDetectedBpom"
+                >
+                  <AdminIcon name="check" :size="15" />
+                  {{ bpomCopied ? 'Tersalin!' : 'Salin No. BPOM' }}
+                </button>
+                <a
+                  :href="detectedBpomInfo.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="admin-btn admin-btn-primary"
+                >
+                  <AdminIcon name="external" :size="15" />
+                  Cek di BPOM RI
+                </a>
               </div>
             </div>
 

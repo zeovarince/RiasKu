@@ -173,6 +173,15 @@ test('lookup-barcode gracefully falls back to not_found when external api fails 
             'code' => '8999999999999',
             'status' => 0,
         ], 200),
+        'https://world.openproductsfacts.org/api/v2/product/8999999999999.json*' => Http::response([
+            'code' => '8999999999999',
+            'status' => 0,
+        ], 200),
+        'https://api.upcitemdb.com/prod/trial/lookup*' => Http::response([
+            'code' => 'OK',
+            'total' => 0,
+            'items' => [],
+        ], 200),
     ]);
 
     Sanctum::actingAs($this->admin);
@@ -182,4 +191,110 @@ test('lookup-barcode gracefully falls back to not_found when external api fails 
 
     expect($res->json('data.status'))->toBe('not_found')
         ->and($res->json('data.barcode'))->toBe('8999999999999');
+});
+
+test('lookup-barcode detects Indonesian BPOM 2D barcode format like (90)NA18241201785', function () {
+    Http::fake();
+    Sanctum::actingAs($this->admin);
+
+    $res = $this->getJson('/api/admin/produk/lookup-barcode?barcode=(90)NA18241201785')
+        ->assertOk();
+
+    expect($res->json('data.status'))->toBe('bpom_detected')
+        ->and($res->json('data.bpom_number'))->toBe('NA18241201785')
+        ->and($res->json('data.cekbpom_url'))->toBe('https://cekbpom.pom.go.id/');
+
+    Http::assertNothingSent();
+});
+
+test('lookup-barcode matches existing local product when scanning its BPOM 2D barcode', function () {
+    Http::fake();
+
+    $product = Produk::create([
+        'kategori_id' => $this->catSkincare->id,
+        'sku' => 'RSK-BPOM-01',
+        'bpom_number' => 'NA18241201785',
+        'name' => 'Herborist Natural Body Wash',
+        'brand' => 'Herborist',
+        'weight_grams' => 250,
+        'base_price' => 24000,
+        'retail_price' => 32000,
+        'min_stock' => 5,
+        'is_active' => true,
+    ]);
+
+    Sanctum::actingAs($this->admin);
+
+    $res = $this->getJson('/api/admin/produk/lookup-barcode?barcode=(90)NA18241201785')
+        ->assertOk();
+
+    expect($res->json('data.status'))->toBe('existing_local')
+        ->and($res->json('data.product.id'))->toBe($product->id)
+        ->and($res->json('data.bpom_number'))->toBe('NA18241201785');
+
+    Http::assertNothingSent();
+});
+
+test('lookup-barcode falls back to Open Products Facts when Open Beauty Facts has no match', function () {
+    Http::fake([
+        'https://world.openbeautyfacts.org/api/v2/product/8991234567890.json*' => Http::response([
+            'code' => '8991234567890',
+            'status' => 0,
+        ], 200),
+        'https://world.openproductsfacts.org/api/v2/product/8991234567890.json*' => Http::response([
+            'code' => '8991234567890',
+            'status' => 1,
+            'product' => [
+                'product_name' => 'Emina Bright Stuff Face Wash',
+                'brands' => 'Emina',
+                'quantity' => '50 ml',
+                'categories' => 'Face Wash, Skincare',
+            ],
+        ], 200),
+    ]);
+
+    Sanctum::actingAs($this->admin);
+
+    $res = $this->getJson('/api/admin/produk/lookup-barcode?barcode=8991234567890')
+        ->assertOk();
+
+    expect($res->json('data.status'))->toBe('external_found')
+        ->and($res->json('data.source'))->toBe('open_products_facts')
+        ->and($res->json('data.suggestion.name'))->toBe('Emina Bright Stuff Face Wash')
+        ->and($res->json('data.suggestion.brand'))->toBe('Emina')
+        ->and($res->json('data.suggestion.weight_grams'))->toBe(50);
+});
+
+test('lookup-barcode falls back to UPCitemdb when Open Beauty Facts and Open Products Facts miss', function () {
+    Http::fake([
+        'https://world.openbeautyfacts.org/api/v2/product/8993137705555.json*' => Http::response(['status' => 0], 200),
+        'https://world.openproductsfacts.org/api/v2/product/8993137705555.json*' => Http::response(['status' => 0], 200),
+        'https://api.upcitemdb.com/prod/trial/lookup*' => Http::response([
+            'code' => 'OK',
+            'total' => 1,
+            'items' => [
+                [
+                    'ean' => '8993137705555',
+                    'title' => 'Wardah Colorfit Velvet Matte Lip Mousse 4g',
+                    'brand' => 'Wardah',
+                    'category' => 'Health & Beauty > Personal Care > Cosmetics > Makeup > Lip Makeup',
+                    'description' => 'Soft velvet matte lip mousse nyaman dipakai seharian.',
+                    'images' => ['https://cdn.example.com/wardah-lip.jpg'],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    Sanctum::actingAs($this->admin);
+
+    $res = $this->getJson('/api/admin/produk/lookup-barcode?barcode=8993137705555')
+        ->assertOk();
+
+    expect($res->json('data.status'))->toBe('external_found')
+        ->and($res->json('data.source'))->toBe('upcitemdb')
+        ->and($res->json('data.suggestion.name'))->toBe('Wardah Colorfit Velvet Matte Lip Mousse 4g')
+        ->and($res->json('data.suggestion.brand'))->toBe('Wardah')
+        ->and($res->json('data.suggestion.weight_grams'))->toBe(4)
+        ->and($res->json('data.suggestion.suggested_category_id'))->toBe($this->catLip->id)
+        ->and($res->json('data.suggestion.image_preview_url'))->toBe('https://cdn.example.com/wardah-lip.jpg');
 });
